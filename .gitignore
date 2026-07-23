@@ -1,0 +1,5 @@
+node_modules/
+server/config/balance.custom.json
+server/config/admin.settings.json
+*.log
+.env

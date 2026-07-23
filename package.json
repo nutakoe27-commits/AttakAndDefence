@@ -1,0 +1,19 @@
+{
+  "name": "attack-and-defence",
+  "version": "1.0.0",
+  "description": "Attack & Defence — браузерный PvP tower defense с процедурными картами",
+  "main": "server/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/index.js",
+    "test": "node test/smoke.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,245 @@
+'use strict';
+// Раннер матчей и матчмейкинг.
+// Очередь на двоих; если пара не нашлась за matchmaking.botFallbackSec — подставляем бота.
+const { Match } = require('./game/sim');
+const { Bot } = require('./game/bot');
+const balance = require('./balance');
+const crypto = require('crypto');
+
+const BOT_NAMES = ['Генерал Оникс', 'Командор Вега', 'Маршал Гром', 'Стратег Ирбис', 'Полковник Шторм'];
+const DISCONNECT_FORFEIT_SEC = 25;
+
+let nextMatchId = 1;
+
+class MatchRunner {
+  constructor(playersInfo, onFinish) {
+    // playersInfo: [{token, name, ws, isBot}]
+    this.id = 'm' + (nextMatchId++);
+    this.match = new Match(this.id, balance.get(), playersInfo.map(p => ({ name: p.name, isBot: p.isBot })));
+    this.sockets = playersInfo.map(p => p.ws || null);
+    this.tokens = playersInfo.map(p => p.token || null);
+    this.disconnectedAt = [null, null];
+    this.bot = null;
+    this.onFinish = onFinish;
+    this.finishedNotified = false;
+    for (let i = 0; i < playersInfo.length; i++) {
+      if (playersInfo[i].isBot) this.bot = new Bot(this.match, i);
+    }
+    const tickMs = 1000 / this.match.balance.match.tickRate;
+    this.interval = setInterval(() => this.tickLoop(), tickMs);
+    // Отправляем стартовые данные.
+    for (let slot = 0; slot < 2; slot++) this.sendInit(slot);
+  }
+
+  sendInit(slot) {
+    const ws = this.sockets[slot];
+    if (!ws) return;
+    this.send(ws, { t: 'matchStart', ...this.match.initData(slot) });
+  }
+
+  send(ws, obj) {
+    if (ws && ws.readyState === 1) {
+      try { ws.send(JSON.stringify(obj)); } catch (_) { /* сокет умер — обработает on('close') */ }
+    }
+  }
+
+  tickLoop() {
+    const dt = this.match.dt;
+    if (this.bot) this.bot.update(dt);
+    this.checkDisconnects();
+    this.match.step();
+    const snap = this.match.snapshot();
+    for (const ws of this.sockets) this.send(ws, { t: 'snap', s: snap });
+    if (this.match.over) this.finish();
+  }
+
+  checkDisconnects() {
+    if (this.match.over) return;
+    for (let slot = 0; slot < 2; slot++) {
+      if (this.match.players[slot].isBot) continue;
+      const ws = this.sockets[slot];
+      const alive = ws && ws.readyState === 1;
+      if (alive) { this.disconnectedAt[slot] = null; continue; }
+      if (this.disconnectedAt[slot] === null) this.disconnectedAt[slot] = Date.now();
+      else if (Date.now() - this.disconnectedAt[slot] > DISCONNECT_FORFEIT_SEC * 1000) {
+        this.match.finish(1 - slot, 'disconnect');
+      }
+    }
+  }
+
+  handleCommand(slot, msg) {
+    const m = this.match;
+    let res = null;
+    switch (msg.t) {
+      case 'spawn': res = m.spawnUnits(slot, String(msg.unit || '')); break;
+      case 'build': res = m.build(slot, String(msg.type || ''), msg.x | 0, msg.y | 0); break;
+      case 'sell': res = m.sell(slot, msg.id | 0); break;
+      case 'surrender': m.finish(1 - slot, 'surrender'); res = { ok: true }; break;
+      default: return;
+    }
+    if (res && !res.ok) this.send(this.sockets[slot], { t: 'reject', reason: res.error });
+  }
+
+  attach(slot, ws) {
+    this.sockets[slot] = ws;
+    this.disconnectedAt[slot] = null;
+    this.sendInit(slot);
+  }
+
+  detach(ws) {
+    for (let slot = 0; slot < 2; slot++) {
+      if (this.sockets[slot] === ws) this.sockets[slot] = null;
+    }
+  }
+
+  finish() {
+    if (this.finishedNotified) return;
+    this.finishedNotified = true;
+    clearInterval(this.interval);
+    this.onFinish(this);
+  }
+
+  stop(reason) {
+    this.match.finish(null, reason || 'aborted');
+    const snap = this.match.snapshot();
+    for (const ws of this.sockets) this.send(ws, { t: 'snap', s: snap });
+    this.finish();
+  }
+
+  // Сводка для админки.
+  adminSummary() {
+    const m = this.match;
+    return {
+      id: this.id,
+      time: Math.round(m.time),
+      over: m.over,
+      players: m.players.map((p, i) => ({
+        name: p.name, isBot: p.isBot,
+        gold: Math.floor(p.gold), income: p.income,
+        baseHp: Math.round(p.baseHp), baseHpMax: p.baseHpMax,
+        units: m.units.filter(u => u.owner === i).length,
+        buildings: m.buildings.filter(b => b.owner === i).length,
+        kills: p.unitsKilled,
+        connected: p.isBot || (this.sockets[i] && this.sockets[i].readyState === 1),
+      })),
+      seed: m.map.seed,
+    };
+  }
+}
+
+class Lobby {
+  constructor() {
+    this.queue = [];          // [{token, name, ws, since, timer}]
+    this.matches = new Map(); // id -> MatchRunner
+    this.byToken = new Map(); // token -> {runner, slot}
+    this.history = [];        // завершённые матчи (для админки)
+    this.stats = { totalMatches: 0, botMatches: 0, pvpMatches: 0 };
+  }
+
+  botFallbackMs() {
+    const b = balance.get();
+    return (b.matchmaking && b.matchmaking.botFallbackSec ? b.matchmaking.botFallbackSec : 20) * 1000;
+  }
+
+  enqueue(ws, name, token) {
+    this.dequeue(ws); // на случай повторного клика
+    const entry = { token, name, ws, since: Date.now() };
+    entry.timer = setTimeout(() => this.fallbackToBot(entry), this.botFallbackMs());
+    this.queue.push(entry);
+    this.trySendPair();
+    ws.send(JSON.stringify({ t: 'queued', botFallbackSec: this.botFallbackMs() / 1000 }));
+  }
+
+  dequeue(ws) {
+    const i = this.queue.findIndex(e => e.ws === ws);
+    if (i >= 0) {
+      clearTimeout(this.queue[i].timer);
+      this.queue.splice(i, 1);
+    }
+  }
+
+  trySendPair() {
+    while (this.queue.length >= 2) {
+      const a = this.queue.shift();
+      const b = this.queue.shift();
+      clearTimeout(a.timer); clearTimeout(b.timer);
+      this.startMatch([
+        { token: a.token, name: a.name, ws: a.ws, isBot: false },
+        { token: b.token, name: b.name, ws: b.ws, isBot: false },
+      ], 'pvp');
+    }
+  }
+
+  fallbackToBot(entry) {
+    const i = this.queue.indexOf(entry);
+    if (i < 0) return;
+    this.queue.splice(i, 1);
+    const botName = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)];
+    this.startMatch([
+      { token: entry.token, name: entry.name, ws: entry.ws, isBot: false },
+      { token: null, name: botName + ' [бот]', ws: null, isBot: true },
+    ], 'bot');
+  }
+
+  startMatch(players, kind) {
+    const runner = new MatchRunner(players, r => this.onMatchFinish(r));
+    this.matches.set(runner.id, runner);
+    for (let slot = 0; slot < players.length; slot++) {
+      if (players[slot].token) this.byToken.set(players[slot].token, { runner, slot });
+    }
+    this.stats.totalMatches++;
+    if (kind === 'bot') this.stats.botMatches++; else this.stats.pvpMatches++;
+    console.log(`[match] ${runner.id} старт (${kind}): ${players.map(p => p.name).join(' vs ')}`);
+  }
+
+  onMatchFinish(runner) {
+    const m = runner.match;
+    this.history.unshift({
+      id: runner.id,
+      finishedAt: Date.now(),
+      durationSec: Math.round(m.time),
+      winner: m.winner,
+      reason: m.endReason,
+      players: m.players.map(p => ({
+        name: p.name, isBot: p.isBot,
+        kills: p.unitsKilled, losses: p.unitsLost,
+        goldEarned: p.goldEarned, goldSpent: p.goldSpent,
+        baseHp: Math.round(p.baseHp),
+      })),
+      seed: m.map.seed,
+    });
+    if (this.history.length > 100) this.history.pop();
+    // Матч держим ещё минуту, чтобы клиенты успели показать итоговый экран.
+    setTimeout(() => {
+      this.matches.delete(runner.id);
+      for (const [token, ref] of this.byToken) {
+        if (ref.runner === runner) this.byToken.delete(token);
+      }
+    }, 60 * 1000);
+    console.log(`[match] ${runner.id} финиш: winner=${m.winner} reason=${m.endReason} t=${Math.round(m.time)}s`);
+  }
+
+  // Реконнект: если токен привязан к живому матчу — возвращаем игрока в бой.
+  tryReattach(token, ws) {
+    const ref = this.byToken.get(token);
+    if (!ref || ref.runner.match.over) return false;
+    ref.runner.attach(ref.slot, ws);
+    return true;
+  }
+
+  findByWs(ws) {
+    for (const ref of this.byToken.values()) {
+      if (ref.runner.sockets[ref.slot] === ws) return ref;
+    }
+    return null;
+  }
+
+  handleDisconnect(ws) {
+    this.dequeue(ws);
+    for (const runner of this.matches.values()) runner.detach(ws);
+  }
+}
+
+function newToken() { return crypto.randomBytes(16).toString('hex'); }
+
+module.exports = { Lobby, MatchRunner, newToken };

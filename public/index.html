@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Attack &amp; Defence — PvP Tower Defense</title>
+<meta name="description" content="Attack & Defence — браузерная PvP стратегия: стройте оборону, развивайте экономику и уничтожьте вражескую базу.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚔️</text></svg>">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+<!-- ЭКРАН: главное меню -->
+<div id="screen-menu" class="screen active">
+  <div class="menu-bg" id="menu-bg-canvas-wrap"><canvas id="menu-bg"></canvas></div>
+  <div class="menu-card">
+    <div class="logo">
+      <div class="logo-swords">⚔</div>
+      <h1>ATTACK <span>&amp;</span> DEFENCE</h1>
+      <div class="logo-sub">PvP tower defense на процедурных картах</div>
+    </div>
+    <div class="menu-form">
+      <label for="player-name">Ваше имя</label>
+      <input id="player-name" maxlength="20" placeholder="Полководец" autocomplete="off">
+      <button id="btn-play" class="btn btn-primary btn-big">⚔ В БОЙ</button>
+      <button id="btn-howto" class="btn btn-ghost">Как играть</button>
+    </div>
+    <div class="menu-footer">
+      <span id="conn-status" class="conn-status">подключение…</span>
+    </div>
+  </div>
+</div>
+
+<!-- ЭКРАН: поиск матча -->
+<div id="screen-queue" class="screen">
+  <div class="queue-card">
+    <div class="queue-spinner"></div>
+    <h2>Поиск противника…</h2>
+    <div class="queue-time"><span id="queue-seconds">0</span> сек</div>
+    <div class="queue-hint" id="queue-hint">Ищем достойного соперника среди игроков</div>
+    <button id="btn-cancel-queue" class="btn btn-ghost">Отмена</button>
+  </div>
+</div>
+
+<!-- ЭКРАН: игра -->
+<div id="screen-game" class="screen">
+  <canvas id="game-canvas"></canvas>
+
+  <!-- Верхняя панель -->
+  <div id="hud-top">
+    <div class="hud-side hud-me">
+      <div class="hud-player-name" id="hud-my-name">Вы</div>
+      <div class="hp-bar"><div class="hp-fill me" id="hud-my-hp"></div><span class="hp-text" id="hud-my-hp-text"></span></div>
+    </div>
+    <div class="hud-center">
+      <div class="hud-gold" id="hud-gold-wrap" title="Золото и доход в секунду">
+        <span class="gold-icon">◉</span><span id="hud-gold">0</span>
+        <span class="hud-income" id="hud-income">+0/с</span>
+      </div>
+      <div class="hud-timer" id="hud-timer">00:00</div>
+      <div class="hud-sd hidden" id="hud-sd">⚠ ВНЕЗАПНАЯ СМЕРТЬ — базы разрушаются!</div>
+    </div>
+    <div class="hud-side hud-enemy">
+      <div class="hud-player-name" id="hud-enemy-name">Противник</div>
+      <div class="hp-bar"><div class="hp-fill enemy" id="hud-enemy-hp"></div><span class="hp-text" id="hud-enemy-hp-text"></span></div>
+    </div>
+  </div>
+
+  <!-- Нижняя панель -->
+  <div id="hud-bottom">
+    <div class="hud-group" id="units-panel">
+      <div class="hud-group-title">Юниты <span class="hint">(отправляются к вражеской базе)</span></div>
+      <div class="hud-buttons" id="unit-buttons"></div>
+    </div>
+    <div class="hud-group" id="build-panel">
+      <div class="hud-group-title">Постройки <span class="hint">(на своей половине)</span></div>
+      <div class="hud-buttons" id="build-buttons"></div>
+    </div>
+    <div class="hud-group hud-group-misc">
+      <button id="btn-surrender" class="btn btn-danger btn-small" title="Сдаться">🏳</button>
+    </div>
+  </div>
+
+  <!-- Панель выбранной постройки -->
+  <div id="selection-panel" class="hidden">
+    <div id="sel-title"></div>
+    <div id="sel-info"></div>
+    <button id="btn-sell" class="btn btn-small">Продать</button>
+  </div>
+
+  <div id="toast-wrap"></div>
+  <div id="tooltip" class="hidden"></div>
+  <div id="placement-hint" class="hidden">ЛКМ — построить · ПКМ / Esc — отмена</div>
+</div>
+
+<!-- Итоговый экран -->
+<div id="screen-end" class="screen overlay-screen">
+  <div class="end-card">
+    <h2 id="end-title">Победа!</h2>
+    <div id="end-reason"></div>
+    <table class="end-stats" id="end-stats"></table>
+    <button id="btn-back-menu" class="btn btn-primary">В главное меню</button>
+  </div>
+</div>
+
+<!-- Обучение -->
+<div id="tutorial-overlay" class="hidden">
+  <div id="tutorial-dim-top" class="tut-dim"></div>
+  <div id="tutorial-box">
+    <div id="tutorial-step-num"></div>
+    <div id="tutorial-text"></div>
+    <div class="tut-buttons">
+      <button id="btn-tut-skip" class="btn btn-ghost btn-small">Пропустить обучение</button>
+      <button id="btn-tut-next" class="btn btn-primary btn-small">Далее →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Как играть -->
+<div id="howto-modal" class="modal hidden">
+  <div class="modal-card">
+    <h2>Как играть</h2>
+    <div class="howto-grid">
+      <div><b>🎯 Цель.</b> Уничтожьте вражескую базу раньше, чем уничтожат вашу. Матч длится 10–15 минут; после 10:30 начинается «внезапная смерть» — обе базы медленно разрушаются.</div>
+      <div><b>◉ Экономика.</b> Золото капает пассивно. Стройте <b>шахты</b> и <b>банки</b>, чтобы ускорить доход — экономика решает затяжные бои.</div>
+      <div><b>⚔ Атака.</b> Юниты покупаются пачками и сами бегут к вражеской базе, атакуя всё на пути. Комбинируйте: танки впереди, лучницы сзади, целитель рядом.</div>
+      <div><b>🏰 Оборона.</b> Башни стреляют сами. Ставьте их в узких проходах. Баррикады заставляют врагов идти в обход — или тратить время на их разрушение.</div>
+      <div><b>🗺 Карта.</b> Каждый матч — новая процедурная карта. Строить можно только на своей половине, на клетках земли (не в лесу и не на скалах).</div>
+      <div><b>⌨ Управление.</b> Перетаскивание/стрелки — камера, колесо — зум, горячие клавиши 1–6 — юниты, Q W E R T Y — постройки, Esc — отмена.</div>
+    </div>
+    <button id="btn-howto-close" class="btn btn-primary">Понятно</button>
+  </div>
+</div>
+
+<script type="module" src="/js/main.js"></script>
+</body>
+</html>

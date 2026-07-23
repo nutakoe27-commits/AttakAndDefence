@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin — Attack &amp; Defence</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+<link rel="stylesheet" href="/admin/admin.css">
+</head>
+<body>
+
+<!-- Логин -->
+<div id="login-screen" class="login-wrap">
+  <form id="login-form" class="login-card">
+    <div class="login-logo">🛡️</div>
+    <h1>Attack &amp; Defence</h1>
+    <div class="login-sub">Панель администратора</div>
+    <input id="login-password" type="password" placeholder="Пароль" autocomplete="current-password">
+    <button type="submit" class="btn btn-primary">Войти</button>
+    <div id="login-error" class="login-error"></div>
+  </form>
+</div>
+
+<!-- Приложение -->
+<div id="app" class="app hidden">
+  <aside class="sidebar">
+    <div class="sidebar-logo">🛡️ <span>A&amp;D Admin</span></div>
+    <nav>
+      <button class="nav-btn active" data-page="dashboard">📊 Дашборд</button>
+      <button class="nav-btn" data-page="matches">⚔ Матчи</button>
+      <button class="nav-btn" data-page="balance">⚖ Баланс</button>
+      <button class="nav-btn" data-page="settings">⚙ Матчмейкинг и бот</button>
+    </nav>
+    <div class="sidebar-footer">
+      <div id="live-indicator" class="live-dot">● live</div>
+      <button id="btn-logout" class="btn btn-ghost btn-small">Выйти</button>
+    </div>
+  </aside>
+
+  <main class="content">
+    <!-- Дашборд -->
+    <section id="page-dashboard" class="page active">
+      <h2>Дашборд</h2>
+      <div class="cards" id="dash-cards"></div>
+      <div class="panel">
+        <h3>Статистика матчей</h3>
+        <div class="cards" id="dash-stats"></div>
+      </div>
+    </section>
+
+    <!-- Матчи -->
+    <section id="page-matches" class="page">
+      <h2>Матчи</h2>
+      <div class="panel">
+        <h3>Идут сейчас <span id="active-count" class="badge"></span></h3>
+        <div class="table-wrap"><table id="active-matches"></table></div>
+      </div>
+      <div class="panel">
+        <h3>История (последние 30)</h3>
+        <div class="table-wrap"><table id="history-matches"></table></div>
+      </div>
+    </section>
+
+    <!-- Баланс -->
+    <section id="page-balance" class="page">
+      <div class="page-head">
+        <h2>Баланс</h2>
+        <div class="head-actions">
+          <span id="balance-dirty" class="dirty-note hidden">есть несохранённые изменения</span>
+          <button id="btn-balance-save" class="btn btn-primary">💾 Сохранить</button>
+          <button id="btn-balance-reset" class="btn btn-danger">Сбросить к дефолту</button>
+        </div>
+      </div>
+      <div class="note">Изменения применяются к <b>новым матчам</b>; текущие матчи доигрываются на старом балансе. Значения, отличающиеся от дефолта, подсвечены.</div>
+      <div id="balance-editor"></div>
+    </section>
+
+    <!-- Настройки -->
+    <section id="page-settings" class="page">
+      <div class="page-head">
+        <h2>Матчмейкинг и бот</h2>
+        <div class="head-actions">
+          <button id="btn-settings-save" class="btn btn-primary">💾 Сохранить</button>
+        </div>
+      </div>
+      <div class="note">Здесь настраивается поведение бота-заглушки и время ожидания матча. Это часть того же конфига баланса.</div>
+      <div id="settings-editor"></div>
+    </section>
+  </main>
+</div>
+
+<div id="admin-toast-wrap"></div>
+<script src="/admin/admin.js"></script>
+</body>
+</html>
