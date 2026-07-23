@@ -127,13 +127,18 @@ class MatchRunner {
   }
 }
 
+const ROOM_TTL_MS = 15 * 60 * 1000;
+// Алфавит без похожих символов (нет 0/O, 1/I/L).
+const ROOM_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+
 class Lobby {
   constructor() {
     this.queue = [];          // [{token, name, ws, since, timer}]
+    this.rooms = new Map();   // code -> {code, host:{token,name,ws}, createdAt}
     this.matches = new Map(); // id -> MatchRunner
     this.byToken = new Map(); // token -> {runner, slot}
     this.history = [];        // завершённые матчи (для админки)
-    this.stats = { totalMatches: 0, botMatches: 0, pvpMatches: 0 };
+    this.stats = { totalMatches: 0, botMatches: 0, pvpMatches: 0, friendMatches: 0 };
   }
 
   botFallbackMs() {
@@ -188,8 +193,58 @@ class Lobby {
       if (players[slot].token) this.byToken.set(players[slot].token, { runner, slot });
     }
     this.stats.totalMatches++;
-    if (kind === 'bot') this.stats.botMatches++; else this.stats.pvpMatches++;
+    if (kind === 'bot') this.stats.botMatches++;
+    else if (kind === 'friend') this.stats.friendMatches++;
+    else this.stats.pvpMatches++;
     console.log(`[match] ${runner.id} старт (${kind}): ${players.map(p => p.name).join(' vs ')}`);
+  }
+
+  // ---------- Приватные комнаты («игра с другом») ----------
+  // Хост создаёт комнату и получает код; друг вводит код (или открывает ссылку) — матч стартует.
+  // Бот-фоллбек в комнатах не работает: ждём именно друга.
+  createRoom(ws, name, token) {
+    this.dequeue(ws);           // нельзя одновременно искать матч и ждать друга
+    this.leaveRoomByWs(ws);     // и держать две комнаты
+    this.cleanupRooms();
+    let code;
+    do {
+      code = '';
+      for (let i = 0; i < 4; i++) code += ROOM_ALPHABET[Math.floor(Math.random() * ROOM_ALPHABET.length)];
+    } while (this.rooms.has(code));
+    this.rooms.set(code, { code, host: { token, name, ws }, createdAt: Date.now() });
+    return code;
+  }
+
+  joinRoom(code, ws, name, token) {
+    this.cleanupRooms();
+    const room = this.rooms.get(String(code || '').toUpperCase().trim());
+    if (!room) return { ok: false, error: 'Комната не найдена. Проверьте код — возможно, друг её закрыл.' };
+    if (room.host.ws === ws || room.host.token === token) return { ok: false, error: 'Это ваша собственная комната — отправьте код другу.' };
+    if (!room.host.ws || room.host.ws.readyState !== 1) {
+      this.rooms.delete(room.code);
+      return { ok: false, error: 'Создатель комнаты отключился.' };
+    }
+    this.rooms.delete(room.code);
+    this.dequeue(ws);
+    this.startMatch([
+      { token: room.host.token, name: room.host.name, ws: room.host.ws, isBot: false },
+      { token, name, ws, isBot: false },
+    ], 'friend');
+    return { ok: true };
+  }
+
+  leaveRoomByWs(ws) {
+    for (const [code, room] of this.rooms) {
+      if (room.host.ws === ws) this.rooms.delete(code);
+    }
+  }
+
+  cleanupRooms() {
+    const now = Date.now();
+    for (const [code, room] of this.rooms) {
+      if (now - room.createdAt > ROOM_TTL_MS) this.rooms.delete(code);
+      else if (!room.host.ws || room.host.ws.readyState !== 1) this.rooms.delete(code);
+    }
   }
 
   onMatchFinish(runner) {
@@ -236,6 +291,7 @@ class Lobby {
 
   handleDisconnect(ws) {
     this.dequeue(ws);
+    this.leaveRoomByWs(ws);
     for (const runner of this.matches.values()) runner.detach(ws);
   }
 }

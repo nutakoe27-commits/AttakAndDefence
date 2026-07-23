@@ -91,6 +91,7 @@ async function handle(req, res, lobby, onlineCount) {
         uptimeSec: Math.round((Date.now() - startedAt) / 1000),
         online: onlineCount(),
         inQueue: lobby.queue.length,
+        openRooms: lobby.rooms ? lobby.rooms.size : 0,
         activeMatches: [...lobby.matches.values()].filter(r => !r.match.over).length,
         stats: { ...lobby.stats, avgDurationSec: avgDuration, finished: hist.length },
         balanceVersion: balance.get().version,

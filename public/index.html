@@ -23,6 +23,7 @@
       <label for="player-name">Ваше имя</label>
       <input id="player-name" maxlength="20" placeholder="Полководец" autocomplete="off">
       <button id="btn-play" class="btn btn-primary btn-big">⚔ В БОЙ</button>
+      <button id="btn-friend" class="btn">👥 Играть с другом</button>
       <button id="btn-howto" class="btn btn-ghost">Как играть</button>
     </div>
     <div class="menu-footer">
@@ -116,6 +117,39 @@
   </div>
 </div>
 
+<!-- Игра с другом -->
+<div id="friend-modal" class="modal hidden">
+  <div class="modal-card friend-card">
+    <h2>Игра с другом</h2>
+
+    <!-- Выбор: создать или войти -->
+    <div id="friend-choose">
+      <button id="btn-room-create" class="btn btn-primary btn-big friend-wide">Создать комнату</button>
+      <div class="friend-divider">или войдите по коду от друга</div>
+      <div class="friend-join-row">
+        <input id="room-code-input" maxlength="4" placeholder="КОД" autocomplete="off" spellcheck="false">
+        <button id="btn-room-join" class="btn btn-primary">Войти</button>
+      </div>
+      <div id="friend-error" class="friend-error"></div>
+    </div>
+
+    <!-- Ожидание друга -->
+    <div id="friend-wait" class="hidden">
+      <div class="queue-spinner small"></div>
+      <div class="friend-wait-text">Ждём друга…</div>
+      <div class="friend-code" id="friend-code">····</div>
+      <div class="friend-hint">Продиктуйте код или отправьте ссылку:</div>
+      <div class="friend-link-row">
+        <input id="friend-link" readonly>
+        <button id="btn-copy-link" class="btn">📋</button>
+      </div>
+      <div id="copy-done" class="friend-copied"></div>
+    </div>
+
+    <button id="btn-friend-close" class="btn btn-ghost">Закрыть</button>
+  </div>
+</div>
+
 <!-- Как играть -->
 <div id="howto-modal" class="modal hidden">
   <div class="modal-card">
@@ -127,6 +161,7 @@
       <div><b>🏰 Оборона.</b> Башни стреляют сами. Ставьте их в узких проходах. Баррикады заставляют врагов идти в обход — или тратить время на их разрушение.</div>
       <div><b>🗺 Карта.</b> Каждый матч — новая процедурная карта. Строить можно только на своей половине, на клетках земли (не в лесу и не на скалах).</div>
       <div><b>⌨ Управление.</b> Перетаскивание/стрелки — камера, колесо — зум, горячие клавиши 1–6 — юниты, Q W E R T Y — постройки, Esc — отмена.</div>
+      <div><b>👥 С другом.</b> Кнопка «Играть с другом»: создайте комнату и отправьте другу код или ссылку — он попадёт прямо к вам в матч. Кнопка «В бой» ищет случайного соперника (или бота через 20 секунд).</div>
     </div>
     <button id="btn-howto-close" class="btn btn-primary">Понятно</button>
   </div>

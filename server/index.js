@@ -97,6 +97,25 @@ wss.on('connection', (ws) => {
         lobby.dequeue(ws);
         ws.send(JSON.stringify({ t: 'queueCancelled' }));
         break;
+      case 'createRoom': {
+        if (!ws.playerToken) return;
+        ws.playerName = sanitizeName(msg.name || ws.playerName);
+        const code = lobby.createRoom(ws, ws.playerName, ws.playerToken);
+        ws.send(JSON.stringify({ t: 'roomCreated', code }));
+        break;
+      }
+      case 'joinRoom': {
+        if (!ws.playerToken) return;
+        ws.playerName = sanitizeName(msg.name || ws.playerName);
+        const res = lobby.joinRoom(msg.code, ws, ws.playerName, ws.playerToken);
+        if (!res.ok) ws.send(JSON.stringify({ t: 'roomError', reason: res.error }));
+        // при успехе оба игрока получают matchStart из startMatch
+        break;
+      }
+      case 'leaveRoom':
+        lobby.leaveRoomByWs(ws);
+        ws.send(JSON.stringify({ t: 'roomLeft' }));
+        break;
       case 'spawn': case 'build': case 'sell': case 'surrender': {
         const ref = ws.playerToken ? lobby.byToken.get(ws.playerToken) : null;
         if (ref && ref.runner.sockets[ref.slot] === ws) ref.runner.handleCommand(ref.slot, msg);

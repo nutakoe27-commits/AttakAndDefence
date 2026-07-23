@@ -153,6 +153,31 @@ async function waitFor(fn, timeoutMs, what) {
     send(c4, { t: 'hello', token: savedToken, name: 'Соло' });
     await waitFor(() => c4.init, 4000, 'реконнект в матч');
     check(c4.init.matchId === c3.init.matchId, 'реконнект вернул в тот же матч');
+    console.log('7. Приватные комнаты (игра с другом)');
+    const h1 = await wsClient('Хост');
+    const h2 = await wsClient('Друг');
+    await waitFor(() => h1.token && h2.token, 3000, 'hello host/friend');
+    send(h1, { t: 'createRoom', name: 'Хост' });
+    await waitFor(() => h1.msgs.some(m => m.t === 'roomCreated'), 3000, 'roomCreated');
+    const code = h1.msgs.find(m => m.t === 'roomCreated').code;
+    check(/^[A-Z2-9]{4}$/.test(code), 'код комнаты валиден: ' + code);
+    const ovRoom = await fetchJson('/api/admin/overview', { headers: auth });
+    check(ovRoom.body.openRooms === 1, 'комната видна в админке');
+    send(h2, { t: 'joinRoom', code: 'XXXX', name: 'Друг' });
+    await waitFor(() => h2.msgs.some(m => m.t === 'roomError'), 3000, 'roomError');
+    check(true, 'неверный код отклонён');
+    send(h1, { t: 'joinRoom', code, name: 'Хост' });
+    await waitFor(() => h1.msgs.some(m => m.t === 'roomError'), 3000, 'self-join error');
+    check(true, 'вход в свою комнату отклонён');
+    send(h2, { t: 'joinRoom', code: code.toLowerCase(), name: 'Друг' });
+    await waitFor(() => h1.init && h2.init, 5000, 'friend matchStart');
+    check(h1.init.matchId === h2.init.matchId, 'друзья в одном матче (код без учёта регистра)');
+    check(h1.init.players.every(p => !p.isBot), 'бота в матче с другом нет');
+    const ovRoom2 = await fetchJson('/api/admin/overview', { headers: auth });
+    check(ovRoom2.body.openRooms === 0, 'комната закрылась после старта');
+    check(ovRoom2.body.stats.friendMatches === 1, 'friend-матч посчитан в статистике');
+    h1.ws.close(); h2.ws.close();
+
     await fetchJson('/api/admin/balance/reset', { method: 'POST', headers: auth });
     c1.ws.close(); c2.ws.close(); c4.ws.close();
   } catch (e) {

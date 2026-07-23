@@ -33,6 +33,79 @@ $('#btn-howto').addEventListener('click', () => $('#howto-modal').classList.remo
 $('#btn-howto-close').addEventListener('click', () => $('#howto-modal').classList.add('hidden'));
 nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') $('#btn-play').click(); });
 
+// ---------- Игра с другом (приватные комнаты) ----------
+const friendModal = $('#friend-modal');
+let roomOpen = false; // мы — хост открытой комнаты
+
+function myName() {
+  const name = nameInput.value.trim() || 'Полководец';
+  localStorage.setItem('ad_name', name);
+  return name;
+}
+
+function friendShowChoose() {
+  $('#friend-choose').classList.remove('hidden');
+  $('#friend-wait').classList.add('hidden');
+  $('#friend-error').textContent = '';
+}
+
+$('#btn-friend').addEventListener('click', () => {
+  if (!net.connected) { toast('Нет соединения с сервером', 'err'); return; }
+  friendShowChoose();
+  friendModal.classList.remove('hidden');
+  $('#room-code-input').value = '';
+});
+
+$('#btn-room-create').addEventListener('click', () => {
+  net.send({ t: 'createRoom', name: myName() });
+});
+
+function joinRoomByCode(code) {
+  code = String(code || '').toUpperCase().trim();
+  if (code.length !== 4) { $('#friend-error').textContent = 'Код — 4 символа'; return; }
+  $('#friend-error').textContent = '';
+  net.send({ t: 'joinRoom', code, name: myName() });
+}
+$('#btn-room-join').addEventListener('click', () => joinRoomByCode($('#room-code-input').value));
+$('#room-code-input').addEventListener('keydown', e => { if (e.key === 'Enter') joinRoomByCode(e.target.value); });
+$('#room-code-input').addEventListener('input', e => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z2-9]/g, ''); });
+
+$('#btn-friend-close').addEventListener('click', () => {
+  if (roomOpen) { net.send({ t: 'leaveRoom' }); roomOpen = false; }
+  friendModal.classList.add('hidden');
+});
+
+net.on('roomCreated', (msg) => {
+  roomOpen = true;
+  $('#friend-choose').classList.add('hidden');
+  $('#friend-wait').classList.remove('hidden');
+  $('#friend-code').textContent = msg.code;
+  $('#friend-link').value = `${location.origin}/?room=${msg.code}`;
+  $('#copy-done').textContent = '';
+});
+
+net.on('roomError', (msg) => {
+  $('#friend-error').textContent = msg.reason || 'Не удалось войти в комнату';
+  friendShowChoose();
+  friendModal.classList.remove('hidden');
+});
+
+net.on('roomLeft', () => { roomOpen = false; });
+
+$('#btn-copy-link').addEventListener('click', async () => {
+  const link = $('#friend-link').value;
+  try {
+    await navigator.clipboard.writeText(link);
+    $('#copy-done').textContent = 'Ссылка скопирована — отправьте её другу';
+  } catch {
+    $('#friend-link').select();
+    $('#copy-done').textContent = 'Выделено — нажмите Ctrl+C';
+  }
+});
+
+// Пришли по ссылке-приглашению (?room=XXXX): входим сразу после подключения (см. обработчик _open).
+let inviteCode = new URLSearchParams(location.search).get('room');
+
 // Анимированный фон меню: тлеющие угли над полем боя.
 (function menuBg() {
   const cv = $('#menu-bg');
@@ -80,7 +153,17 @@ nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') $('#btn-play
 
 // ---------- Сеть ----------
 const connStatus = $('#conn-status');
-net.on('_open', () => { connStatus.textContent = '● сервер онлайн'; connStatus.className = 'conn-status ok'; });
+net.on('_open', () => {
+  connStatus.textContent = '● сервер онлайн';
+  connStatus.className = 'conn-status ok';
+  // Автовход по ссылке-приглашению (однократно).
+  if (inviteCode) {
+    const code = inviteCode;
+    inviteCode = null;
+    history.replaceState(null, '', '/'); // чистим URL, чтобы F5 не пытался войти снова
+    joinRoomByCode(code);
+  }
+});
 net.on('_close', () => { connStatus.textContent = '● переподключение…'; connStatus.className = 'conn-status err'; });
 
 let queueTimer = null, queueStart = 0;
@@ -107,6 +190,8 @@ $('#btn-cancel-queue').addEventListener('click', () => net.send({ t: 'cancelQueu
 
 net.on('matchStart', (data) => {
   clearInterval(queueTimer);
+  roomOpen = false;
+  friendModal.classList.add('hidden');
   gs.init(data);
   $('#screen-end').classList.remove('active');
   showScreen('#screen-game');

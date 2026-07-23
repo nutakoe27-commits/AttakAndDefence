@@ -96,13 +96,15 @@
       $('#dash-cards').innerHTML =
         card('Онлайн', r.online) +
         card('В очереди', r.inQueue) +
+        card('Комнат ждёт друга', r.openRooms ?? 0) +
         card('Активных матчей', r.activeMatches) +
         card('Аптайм', fmtDur(r.uptimeSec)) +
         card('Версия баланса', r.balanceVersion);
       const s = r.stats;
       $('#dash-stats').innerHTML =
         card('Всего матчей', s.totalMatches) +
-        card('PvP', s.pvpMatches) +
+        card('PvP (очередь)', s.pvpMatches) +
+        card('С другом', s.friendMatches ?? 0) +
         card('Против бота', s.botMatches) +
         card('Завершено (в истории)', s.finished) +
         card('Средняя длительность', fmtDur(s.avgDurationSec));
