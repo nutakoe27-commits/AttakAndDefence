@@ -17,7 +17,18 @@ const tutorial = new Tutorial();
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
   $(id).classList.add('active');
+  checkOrientation();
 }
+
+// Карта широкая — на телефоне в портрете просим повернуть устройство.
+function checkOrientation() {
+  const inGame = $('#screen-game').classList.contains('active');
+  const portrait = window.innerHeight > window.innerWidth;
+  const isMobileSize = Math.min(window.innerWidth, window.innerHeight) < 620;
+  $('#rotate-overlay').classList.toggle('hidden', !(inGame && portrait && isMobileSize));
+}
+window.addEventListener('resize', checkOrientation);
+window.addEventListener('orientationchange', () => setTimeout(() => { checkOrientation(); renderer.resize(); }, 250));
 
 // ---------- Главное меню ----------
 const nameInput = $('#player-name');
@@ -248,9 +259,28 @@ function shopButton(kind, key, spec, colors) {
   cost.textContent = spec.cost + (kind === 'unit' ? ` ×${spec.pack}` : '');
   const hk = document.createElement('div'); hk.className = 'hotkey'; hk.textContent = (spec.hotkey || '').toUpperCase();
   btn.append(hk, icon, name, cost);
-  btn.addEventListener('click', () => kind === 'unit' ? orderUnits(key) : startPlacing(key));
-  btn.addEventListener('mouseenter', (e) => showTooltip(e, kind, key, spec));
+  btn.addEventListener('click', (e) => {
+    if (btn.dataset.longpress === '1') { btn.dataset.longpress = ''; e.preventDefault(); return; }
+    kind === 'unit' ? orderUnits(key) : startPlacing(key);
+  });
+  btn.addEventListener('mouseenter', (e) => { if (!isGhostMouse()) showTooltip(btn, kind, key, spec); });
   btn.addEventListener('mouseleave', hideTooltip);
+  // Мобильные тултипы: длинное нажатие (~450мс) показывает описание вместо покупки.
+  let lpTimer = null;
+  btn.addEventListener('touchstart', () => {
+    btn.dataset.longpress = '';
+    lpTimer = setTimeout(() => {
+      btn.dataset.longpress = '1';
+      showTooltip(btn, kind, key, spec);
+      if (navigator.vibrate) navigator.vibrate(15);
+    }, 450);
+  }, { passive: true });
+  const lpEnd = () => {
+    clearTimeout(lpTimer);
+    if (btn.dataset.longpress === '1') setTimeout(hideTooltip, 1600);
+  };
+  btn.addEventListener('touchend', lpEnd, { passive: true });
+  btn.addEventListener('touchcancel', lpEnd, { passive: true });
   return btn;
 }
 
@@ -263,8 +293,13 @@ function startPlacing(key) {
   ui.selectedBuilding = null;
   $('#selection-panel').classList.add('hidden');
   canvas.classList.add('placing');
-  $('#placement-hint').classList.remove('hidden');
+  const hint = $('#placement-hint');
+  hint.textContent = IS_TOUCH
+    ? 'Тапните по своей половине карты, затем «✓ Построить»'
+    : 'ЛКМ — построить · ПКМ / Esc — отмена';
+  hint.classList.remove('hidden');
   document.querySelectorAll('.shop-btn').forEach(b => b.classList.toggle('active', b.dataset.key === key && b.dataset.kind === 'building'));
+  updatePlaceBar();
 }
 
 function stopPlacing() {
@@ -272,6 +307,7 @@ function stopPlacing() {
   canvas.classList.remove('placing');
   $('#placement-hint').classList.add('hidden');
   document.querySelectorAll('.shop-btn').forEach(b => b.classList.remove('active'));
+  updatePlaceBar();
 }
 
 function placementValid(type, cx, cy) {
@@ -298,7 +334,7 @@ function placementValid(type, cx, cy) {
 
 // ---------- Тултипы ----------
 const tooltipEl = $('#tooltip');
-function showTooltip(e, kind, key, spec) {
+function showTooltip(el, kind, key, spec) {
   const rows = [];
   if (kind === 'unit') {
     rows.push(`HP ${spec.hp} · Урон ${spec.dmg}${spec.bonusVsBuildings > 1 ? ` (×${spec.bonusVsBuildings} по постройкам)` : ''}`);
@@ -317,7 +353,7 @@ function showTooltip(e, kind, key, spec) {
     <div class="t-desc">${spec.desc}</div>
     <div class="t-stats">${rows.join('<br>')}</div>`;
   tooltipEl.classList.remove('hidden');
-  const r = e.currentTarget.getBoundingClientRect();
+  const r = el.getBoundingClientRect();
   tooltipEl.style.left = Math.min(innerWidth - 270, r.left) + 'px';
   tooltipEl.style.bottom = (innerHeight - r.top + 10) + 'px';
   tooltipEl.style.top = 'auto';
@@ -338,7 +374,7 @@ function toast(text, kind = 'err') {
 let dragging = false, dragMoved = false, lastMouse = null;
 
 canvas.addEventListener('mousedown', (e) => {
-  if (e.button === 2) return;
+  if (e.button === 2 || isGhostMouse()) return;
   const mm = renderer.minimapToWorld(e.offsetX, e.offsetY);
   if (mm) {
     renderer.cam.x = mm[0] * TILE; renderer.cam.y = mm[1] * TILE;
@@ -379,6 +415,7 @@ window.addEventListener('mousemove', (e) => {
 });
 
 window.addEventListener('mouseup', (e) => {
+  if (isGhostMouse()) { dragging = false; dragMoved = false; return; }
   const wasMinimap = dragging === 'minimap';
   const moved = dragMoved;
   dragging = false; dragMoved = false;
@@ -409,18 +446,125 @@ canvas.addEventListener('wheel', (e) => {
   renderer.clampCam();
 }, { passive: false });
 
-// Touch: панорама одним пальцем, тап = клик.
-let touchLast = null;
-canvas.addEventListener('touchstart', (e) => { if (e.touches.length === 1) touchLast = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }, { passive: true });
-canvas.addEventListener('touchmove', (e) => {
-  if (e.touches.length === 1 && touchLast) {
-    const t = e.touches[0];
-    renderer.cam.x -= (t.clientX - touchLast.x) / renderer.cam.zoom;
-    renderer.cam.y -= (t.clientY - touchLast.y) / renderer.cam.zoom;
-    renderer.clampCam();
-    touchLast = { x: t.clientX, y: t.clientY };
+// ---------- Тач-управление ----------
+// Пан одним пальцем, пинч-зум двумя, тап = выбор/установка призрака постройки.
+// preventDefault в touchend подавляет синтетические mouse-события,
+// плюс страховка по времени в mouse-обработчиках (lastTouchAt).
+const IS_TOUCH = window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+let lastTouchAt = 0;
+// Любой тач в документе помечает время — гасим синтетические mouse-события везде.
+window.addEventListener('touchstart', () => { lastTouchAt = Date.now(); }, { passive: true, capture: true });
+const tc = { panLast: null, pinchDist: 0, pinchMid: null, moved: false, startAt: 0, startPos: null, onMinimap: false };
+
+function touchPos(t) {
+  const rect = canvas.getBoundingClientRect();
+  return { x: t.clientX - rect.left, y: t.clientY - rect.top };
+}
+
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  lastTouchAt = Date.now();
+  if (e.touches.length === 1) {
+    const p = touchPos(e.touches[0]);
+    tc.panLast = p; tc.startPos = p; tc.moved = false; tc.startAt = Date.now();
+    tc.onMinimap = !!renderer.minimapToWorld(p.x, p.y);
+    if (tc.onMinimap) {
+      const mm = renderer.minimapToWorld(p.x, p.y);
+      renderer.cam.x = mm[0] * TILE; renderer.cam.y = mm[1] * TILE; renderer.clampCam();
+    }
+  } else if (e.touches.length === 2) {
+    tc.panLast = null; tc.onMinimap = false;
+    const [a, b] = [touchPos(e.touches[0]), touchPos(e.touches[1])];
+    tc.pinchDist = Math.hypot(a.x - b.x, a.y - b.y);
+    tc.pinchMid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
   }
-}, { passive: true });
+}, { passive: false });
+
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  lastTouchAt = Date.now();
+  if (e.touches.length === 2) {
+    // Пинч-зум вокруг середины между пальцами.
+    const [a, b] = [touchPos(e.touches[0]), touchPos(e.touches[1])];
+    const dist = Math.hypot(a.x - b.x, a.y - b.y);
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    if (tc.pinchDist > 0) {
+      const [wx, wy] = renderer.screenToWorld(mid.x, mid.y);
+      const z = Math.max(renderer.minZoom, Math.min(renderer.maxZoom, renderer.cam.zoom * (dist / tc.pinchDist)));
+      renderer.cam.zoom = z;
+      // Держим точку под пальцами на месте.
+      const [wx2, wy2] = renderer.screenToWorld(mid.x, mid.y);
+      renderer.cam.x += (wx - wx2) * TILE;
+      renderer.cam.y += (wy - wy2) * TILE;
+      // Заодно пан серединой пинча.
+      if (tc.pinchMid) {
+        renderer.cam.x -= (mid.x - tc.pinchMid.x) / renderer.cam.zoom;
+        renderer.cam.y -= (mid.y - tc.pinchMid.y) / renderer.cam.zoom;
+      }
+      renderer.clampCam();
+    }
+    tc.pinchDist = dist; tc.pinchMid = mid;
+    tc.moved = true;
+    return;
+  }
+  if (e.touches.length === 1) {
+    const p = touchPos(e.touches[0]);
+    if (tc.onMinimap) {
+      const mm = renderer.minimapToWorld(p.x, p.y);
+      if (mm) { renderer.cam.x = mm[0] * TILE; renderer.cam.y = mm[1] * TILE; renderer.clampCam(); }
+      tc.moved = true;
+      return;
+    }
+    if (tc.panLast) {
+      const dx = p.x - tc.panLast.x, dy = p.y - tc.panLast.y;
+      if (tc.startPos && Math.hypot(p.x - tc.startPos.x, p.y - tc.startPos.y) > 9) tc.moved = true;
+      renderer.cam.x -= dx / renderer.cam.zoom;
+      renderer.cam.y -= dy / renderer.cam.zoom;
+      renderer.clampCam();
+      tc.panLast = p;
+    }
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchend', (e) => {
+  e.preventDefault(); // не даём браузеру сгенерировать mouse-события
+  lastTouchAt = Date.now();
+  if (e.touches.length > 0) { // остался палец — продолжаем пан им
+    tc.panLast = touchPos(e.touches[0]);
+    tc.pinchDist = 0;
+    return;
+  }
+  const wasTap = !tc.moved && tc.startPos && Date.now() - tc.startAt < 600 && !tc.onMinimap;
+  const pos = tc.startPos;
+  tc.panLast = null; tc.pinchDist = 0; tc.onMinimap = false;
+  if (!wasTap || !gs.curr) return;
+  handleTap(pos.x, pos.y);
+}, { passive: false });
+
+canvas.addEventListener('touchcancel', () => { tc.panLast = null; tc.pinchDist = 0; tc.onMinimap = false; }, { passive: true });
+
+function handleTap(sx, sy) {
+  hideTooltip();
+  const [wx, wy] = renderer.screenToWorld(sx, sy);
+  const cx = Math.floor(wx), cy = Math.floor(wy);
+  if (ui.placing) {
+    // Первый тап ставит призрак, повторный тап той же клетки — строит.
+    if (ui.placing.cx === cx && ui.placing.cy === cy) {
+      confirmMobilePlacement();
+    } else {
+      ui.placing.cx = cx; ui.placing.cy = cy;
+      ui.placing.valid = placementValid(ui.placing.type, cx, cy);
+      updatePlaceBar();
+    }
+    return;
+  }
+  const hit = gs.curr.buildings.find(b => b[3] === cx && b[4] === cy && b[1] === gs.mySlot);
+  if (hit) selectBuilding(hit);
+  else { ui.selectedBuilding = null; $('#selection-panel').classList.add('hidden'); }
+}
+
+// Подавление синтетических mouse-событий после тача (страховка к preventDefault).
+function isGhostMouse() { return Date.now() - lastTouchAt < 700; }
 
 function tryBuild() {
   const p = ui.placing;
@@ -430,6 +574,30 @@ function tryBuild() {
   // Shift — серийное строительство.
   if (!keys.has('shift')) stopPlacing();
 }
+
+// Мобильная стройка: тап ставит призрак, кнопка «✓ Построить» (или повторный тап) подтверждает.
+function confirmMobilePlacement() {
+  const p = ui.placing;
+  if (!p || p.cx === null) return;
+  if (!p.valid) { toast('Здесь строить нельзя'); return; }
+  net.send({ t: 'build', type: p.type, x: p.cx, y: p.cy });
+  // На мобиле остаёмся в режиме стройки (серийное строительство), выход — кнопка ✕.
+  p.cx = null; p.cy = null; p.valid = false;
+  updatePlaceBar();
+}
+
+function updatePlaceBar() {
+  if (!IS_TOUCH) return;
+  const bar = $('#mobile-place-bar');
+  if (ui.placing) {
+    bar.classList.remove('hidden');
+    $('#btn-place-ok').disabled = !(ui.placing.cx !== null && ui.placing.valid);
+  } else {
+    bar.classList.add('hidden');
+  }
+}
+$('#btn-place-ok').addEventListener('click', confirmMobilePlacement);
+$('#btn-place-cancel').addEventListener('click', stopPlacing);
 
 function selectBuilding(b) {
   ui.selectedBuilding = b[0];
@@ -493,6 +661,11 @@ function updateHud(now) {
     const spec = (btn.dataset.kind === 'unit' ? gs.balance.units : gs.balance.buildings)[btn.dataset.key];
     btn.classList.toggle('locked', me.gold < spec.cost);
   });
+  // Мобильный призрак стройки: пере-валидируем (золото/занятость меняются).
+  if (IS_TOUCH && ui.placing && ui.placing.cx !== null) {
+    ui.placing.valid = placementValid(ui.placing.type, ui.placing.cx, ui.placing.cy);
+    updatePlaceBar();
+  }
 }
 
 // ---------- Конец матча ----------

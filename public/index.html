@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Attack &amp; Defence — PvP Tower Defense</title>
 <meta name="description" content="Attack & Defence — браузерная PvP стратегия: стройте оборону, развивайте экономику и уничтожьте вражескую базу.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚔️</text></svg>">
@@ -92,6 +92,12 @@
   <div id="toast-wrap"></div>
   <div id="tooltip" class="hidden"></div>
   <div id="placement-hint" class="hidden">ЛКМ — построить · ПКМ / Esc — отмена</div>
+
+  <!-- Мобильное подтверждение стройки: на тачах нет ховера, ставим призрак тапом -->
+  <div id="mobile-place-bar" class="hidden">
+    <button id="btn-place-ok" class="btn btn-primary">✓ Построить</button>
+    <button id="btn-place-cancel" class="btn btn-danger">✕</button>
+  </div>
 </div>
 
 <!-- Итоговый экран -->
@@ -160,10 +166,18 @@
       <div><b>⚔ Атака.</b> Юниты покупаются пачками и сами бегут к вражеской базе, атакуя всё на пути. Комбинируйте: танки впереди, лучницы сзади, целитель рядом.</div>
       <div><b>🏰 Оборона.</b> Башни стреляют сами. Ставьте их в узких проходах. Баррикады заставляют врагов идти в обход — или тратить время на их разрушение.</div>
       <div><b>🗺 Карта.</b> Каждый матч — новая процедурная карта. Строить можно только на своей половине, на клетках земли (не в лесу и не на скалах).</div>
-      <div><b>⌨ Управление.</b> Перетаскивание/стрелки — камера, колесо — зум, горячие клавиши 1–6 — юниты, Q W E R T Y — постройки, Esc — отмена.</div>
+      <div><b>⌨ Управление.</b> ПК: перетаскивание/стрелки — камера, колесо — зум, клавиши 1–6 — юниты, Q W E R T Y — постройки, Esc — отмена. Телефон (горизонтально): палец — камера, щипок — зум, тап по карте + «✓ Построить», долгое нажатие на кнопку — описание.</div>
       <div><b>👥 С другом.</b> Кнопка «Играть с другом»: создайте комнату и отправьте другу код или ссылку — он попадёт прямо к вам в матч. Кнопка «В бой» ищет случайного соперника (или бота через 20 секунд).</div>
     </div>
     <button id="btn-howto-close" class="btn btn-primary">Понятно</button>
+  </div>
+</div>
+
+<!-- Просьба повернуть телефон: карта широкая, портрет неиграбелен -->
+<div id="rotate-overlay" class="hidden">
+  <div class="rotate-inner">
+    <div class="rotate-icon">📱⟳</div>
+    <div>Поверните телефон горизонтально</div>
   </div>
 </div>
 
