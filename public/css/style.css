@@ -136,6 +136,13 @@ body {
 .hud-income { font-size: 12px; color: #b8a35c; font-weight: 600; }
 .hud-timer { margin-top: 5px; font-size: 15px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; text-shadow: 0 1px 3px #000; }
 .hud-timer.warn { color: var(--gold); }
+.hud-phase {
+  margin-top: 4px; font-size: 15px; font-weight: 800; letter-spacing: .5px;
+  text-shadow: 0 1px 4px #000; font-variant-numeric: tabular-nums;
+}
+.hud-phase.plan { color: var(--gold); }
+.hud-phase.plan.urgent { animation: sdPulse .6s ease-in-out infinite; color: #ff9a45; }
+.hud-phase.battle { color: var(--enemy); text-shadow: 0 0 12px rgba(255,93,93,.6); }
 .hud-sd {
   margin-top: 4px; font-size: 13px; font-weight: 800; color: #ff7a45;
   animation: sdPulse 1s ease-in-out infinite; text-shadow: 0 0 12px rgba(255,90,40,.8);
@@ -173,6 +180,18 @@ body {
   border: 1px solid var(--border); border-radius: 4px; padding: 0 3px; background: rgba(0,0,0,.4);
 }
 .hud-group-misc { padding-bottom: 4px; }
+
+/* Очередь юнитов текущего раунда */
+#queue-row { display: flex; gap: 5px; justify-content: center; min-height: 22px; margin-bottom: 4px; flex-wrap: wrap; }
+.queue-chip {
+  display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
+  background: rgba(245,197,66,.12); border: 1px solid rgba(245,197,66,.55);
+  color: var(--gold); border-radius: 11px; padding: 1px 9px; font-size: 11px; font-weight: 700;
+  transition: filter .12s;
+}
+.queue-chip:hover { filter: brightness(1.35); }
+.queue-chip .x { opacity: .65; font-size: 10px; }
+.queue-empty { color: var(--muted); font-size: 10.5px; align-self: center; opacity: .7; }
 
 #selection-panel {
   position: absolute; right: 14px; bottom: 120px; z-index: 11; width: 210px;

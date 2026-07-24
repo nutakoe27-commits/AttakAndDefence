@@ -48,8 +48,11 @@ class MatchRunner {
     if (this.bot) this.bot.update(dt);
     this.checkDisconnects();
     this.match.step();
-    const snap = this.match.snapshot();
-    for (const ws of this.sockets) this.send(ws, { t: 'snap', s: snap });
+    // Персональные снапшоты: во время планирования каждый видит только своё.
+    const events = this.match.takeEvents();
+    for (let slot = 0; slot < 2; slot++) {
+      this.send(this.sockets[slot], { t: 'snap', s: this.match.snapshotFor(slot, events) });
+    }
     if (this.match.over) this.finish();
   }
 
@@ -72,6 +75,7 @@ class MatchRunner {
     let res = null;
     switch (msg.t) {
       case 'spawn': res = m.spawnUnits(slot, String(msg.unit || '')); break;
+      case 'unqueue': res = m.unqueueUnits(slot, String(msg.unit || '')); break;
       case 'build': res = m.build(slot, String(msg.type || ''), msg.x | 0, msg.y | 0); break;
       case 'sell': res = m.sell(slot, msg.id | 0); break;
       case 'surrender': m.finish(1 - slot, 'surrender'); res = { ok: true }; break;
@@ -113,6 +117,8 @@ class MatchRunner {
       id: this.id,
       time: Math.round(m.time),
       over: m.over,
+      phase: m.phase,
+      round: m.round,
       players: m.players.map((p, i) => ({
         name: p.name, isBot: p.isBot,
         gold: Math.floor(p.gold), income: p.income,

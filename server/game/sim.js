@@ -41,46 +41,59 @@ class Match {
     }));
 
     this.units = [];      // {id, owner, type, x, y, hp, hpMax, slowUntil, cd, dir}
-    this.buildings = [];  // {id, owner, type, cx, cy, hp, hpMax, cd}
+    this.buildings = [];  // {id, owner, type, cx, cy, hp, hpMax, cd, bornRound}
     this.buildGrid = new Int32Array(this.map.w * this.map.h).fill(-1); // индекс постройки в клетке
     this.incomeAcc = 0;
     this.flowDirty = true;
     this.flows = [null, null]; // поле направлений к базе врага для каждого игрока
+
+    // Раундовая структура: планирование (стройка + очередь юнитов, противник скрыт) -> бой.
+    this.phase = 'plan';
+    this.round = 1;
+    this.planLeft = this.balance.match.planPhaseSec ?? 20;
+    this.battleTime = 0;
+    this.queued = [[], []]; // очереди юнитов на раунд: массив типов, по одному на юнита
   }
 
   gi(x, y) { return y * this.map.w + x; }
   inBounds(x, y) { return x >= 0 && y >= 0 && x < this.map.w && y < this.map.h; }
 
-  // ---------- Команды игроков ----------
+  // ---------- Команды игроков (только в фазе планирования) ----------
   spawnUnits(slot, type) {
     if (this.over) return { ok: false, error: 'Матч завершён' };
+    if (this.phase !== 'plan') return { ok: false, error: 'Дождитесь фазы планирования' };
     const spec = this.balance.units[type];
     if (!spec) return { ok: false, error: 'Неизвестный юнит' };
     const p = this.players[slot];
     if (p.gold < spec.cost) return { ok: false, error: 'Недостаточно золота' };
-    const alive = this.units.filter(u => u.owner === slot).length;
-    if (alive + spec.pack > UNIT_CAP) return { ok: false, error: 'Достигнут лимит армии' };
+    if (this.queued[slot].length + spec.pack > UNIT_CAP) return { ok: false, error: 'Достигнут лимит армии' };
     p.gold -= spec.cost;
     p.goldSpent += spec.cost;
-    const base = this.map.bases[slot];
-    for (let i = 0; i < spec.pack; i++) {
-      const ang = (i / spec.pack) * Math.PI * 2;
-      this.units.push({
-        id: nextEntityId++,
-        owner: slot, type,
-        x: base.x + 0.5 + Math.cos(ang) * 0.9,
-        y: base.y + 0.5 + Math.sin(ang) * 0.9,
-        hp: spec.hp, hpMax: spec.hp,
-        slowUntil: 0, cd: 0, dir: slot === 0 ? 0 : Math.PI,
-      });
-      p.unitsSpawned++;
+    for (let i = 0; i < spec.pack; i++) this.queued[slot].push(type);
+    return { ok: true };
+  }
+
+  // Отмена последней пачки юнитов этого типа (полный возврат золота).
+  unqueueUnits(slot, type) {
+    if (this.over) return { ok: false, error: 'Матч завершён' };
+    if (this.phase !== 'plan') return { ok: false, error: 'Очередь уже вышла в бой' };
+    const spec = this.balance.units[type];
+    if (!spec) return { ok: false, error: 'Неизвестный юнит' };
+    const q = this.queued[slot];
+    let removed = 0;
+    for (let i = q.length - 1; i >= 0 && removed < spec.pack; i--) {
+      if (q[i] === type) { q.splice(i, 1); removed++; }
     }
-    this.events.push({ t: 'spawn', x: base.x + 0.5, y: base.y + 0.5, owner: slot });
+    if (!removed) return { ok: false, error: 'В очереди нет таких юнитов' };
+    const refund = Math.round(spec.cost * (removed / spec.pack));
+    this.players[slot].gold += refund;
+    this.players[slot].goldSpent -= refund;
     return { ok: true };
   }
 
   build(slot, type, cx, cy) {
     if (this.over) return { ok: false, error: 'Матч завершён' };
+    if (this.phase !== 'plan') return { ok: false, error: 'Строить можно только в фазе планирования' };
     const spec = this.balance.buildings[type];
     if (!spec) return { ok: false, error: 'Неизвестная постройка' };
     const p = this.players[slot];
@@ -91,7 +104,7 @@ class Match {
     p.goldSpent += spec.cost;
     const b = {
       id: nextEntityId++, owner: slot, type, cx, cy,
-      hp: spec.hp, hpMax: spec.hp, cd: 0,
+      hp: spec.hp, hpMax: spec.hp, cd: 0, bornRound: this.round,
     };
     this.buildings.push(b);
     this.buildGrid[this.gi(cx, cy)] = b.id;
@@ -101,6 +114,7 @@ class Match {
   }
 
   sell(slot, buildingId) {
+    if (this.phase !== 'plan') return { ok: false, error: 'Продавать можно только в фазе планирования' };
     const i = this.buildings.findIndex(b => b.id === buildingId && b.owner === slot);
     if (i < 0) return { ok: false, error: 'Постройка не найдена' };
     const b = this.buildings[i];
@@ -143,7 +157,11 @@ class Match {
     const target = this.map.bases[enemy];
     const dist = new Float32Array(w * h).fill(Infinity);
     const ownerOfCell = new Int8Array(w * h).fill(-1);
-    for (const b of this.buildings) ownerOfCell[this.gi(b.cx, b.cy)] = b.owner;
+    const barricadeCell = new Uint8Array(w * h);
+    for (const b of this.buildings) {
+      ownerOfCell[this.gi(b.cx, b.cy)] = b.owner;
+      if (b.type === 'barricade') barricadeCell[this.gi(b.cx, b.cy)] = 1;
+    }
 
     // Двоичная куча не нужна: цены малы, подойдёт bucket-подобная очередь.
     const start = this.gi(target.x, target.y);
@@ -163,8 +181,9 @@ class Match {
         const t = tiles[ni];
         if (!walkable(t)) continue;
         let cost = t === T.FOREST ? FOREST_COST : 1;
-        if (ownerOfCell[ni] === enemy) cost = SIEGE_COST; // вражескую постройку придётся ломать
-        if (ownerOfCell[ni] === slot) cost = 6;           // свою лучше обойти, но можно протиснуться
+        if (barricadeCell[ni]) cost = SIEGE_COST;              // баррикада не пускает НИКОГО — обход или слом
+        else if (ownerOfCell[ni] === enemy) cost = SIEGE_COST; // вражескую постройку придётся ломать
+        else if (ownerOfCell[ni] === slot) cost = 6;           // сквозь свою башню можно протиснуться
         const nd = d + cost;
         if (nd < dist[ni]) { dist[ni] = nd; queue.push([nd, ni]); }
       }
@@ -188,11 +207,74 @@ class Match {
     this.time += this.dt;
 
     this.updateIncome();
-    this.updateUnits();
-    this.updateBuildings();
-    this.updateBaseTurrets();
     this.updateSuddenDeathDecay();
+
+    if (this.phase === 'plan') {
+      this.planLeft -= this.dt;
+      if (this.planLeft <= 0) this.startBattle();
+    } else {
+      this.battleTime += this.dt;
+      this.updateUnits();
+      this.updateBuildings();
+      this.updateBaseTurrets();
+      this.applyFatigue();
+      const m = this.balance.match;
+      if (this.battleTime >= (m.battleMinSec ?? 3) && this.units.length === 0) this.endBattle();
+    }
     this.checkEnd();
+  }
+
+  // Конец планирования: обе армии выходят одновременно, всё скрытое раскрывается.
+  startBattle() {
+    this.phase = 'battle';
+    this.battleTime = 0;
+    for (let slot = 0; slot < 2; slot++) {
+      const base = this.map.bases[slot];
+      const q = this.queued[slot];
+      for (let i = 0; i < q.length; i++) {
+        const type = q[i];
+        const spec = this.balance.units[type];
+        const ang = (i / Math.max(1, q.length)) * Math.PI * 2;
+        const r = 0.9 + (i % 3) * 0.55; // кольца вокруг базы, чтобы армия не слипалась
+        this.units.push({
+          id: nextEntityId++,
+          owner: slot, type,
+          x: base.x + 0.5 + Math.cos(ang) * r,
+          y: base.y + 0.5 + Math.sin(ang) * r,
+          hp: spec.hp, hpMax: spec.hp,
+          slowUntil: 0, cd: 0, dir: slot === 0 ? 0 : Math.PI,
+        });
+        this.players[slot].unitsSpawned++;
+      }
+      if (q.length) this.events.push({ t: 'spawn', x: base.x + 0.5, y: base.y + 0.5, owner: slot });
+      this.queued[slot] = [];
+    }
+    this.flowDirty = true;
+    this.events.push({ t: 'phase', phase: 'battle', round: this.round });
+  }
+
+  endBattle() {
+    this.round++;
+    this.phase = 'plan';
+    this.planLeft = this.balance.match.planPhaseSec ?? 20;
+    this.events.push({ t: 'phase', phase: 'plan', round: this.round });
+  }
+
+  // Затянувшийся бой: «усталость» добивает всех, чтобы раунд гарантированно закончился
+  // (например, пат из целителей или бесконечное ковыряние толстой обороны).
+  applyFatigue() {
+    const m = this.balance.match;
+    const maxSec = m.battleMaxSec ?? 60;
+    if (this.battleTime <= maxSec) return;
+    const pct = (m.fatiguePctPerSec ?? 0.08) * (1 + (this.battleTime - maxSec) / 15);
+    for (const u of this.units) {
+      u.hp -= u.hpMax * pct * this.dt;
+      if (u.hp <= 0) {
+        this.players[u.owner].unitsLost++;
+        this.events.push({ t: 'die', x: u.x, y: u.y, u: u.type, owner: u.owner });
+      }
+    }
+    this.reapDead();
   }
 
   // Турель базы: не даёт снести базу ранним рашем без осадных юнитов.
@@ -398,11 +480,11 @@ class Match {
       if (d < bestD) { bestD = d; best = [nx, ny]; }
     }
     if (!best) return;
-    // Если в следующей клетке вражеская постройка — атакуем её (прогрызаем путь).
+    // Если путь перекрыт вражеской постройкой или ЛЮБОЙ баррикадой (даже своей) — ломаем её.
     const bId = this.buildGrid[best[1] * this.map.w + best[0]];
     if (bId >= 0) {
       const b = this.buildings.find(x => x.id === bId);
-      if (b && b.owner !== u.owner) { this.tryAttackBuilding(u, spec, b); return; }
+      if (b && (b.owner !== u.owner || b.type === 'barricade')) { this.tryAttackBuilding(u, spec, b); return; }
     }
     this.moveToward(u, spec, best[0] + 0.5, best[1] + 0.5);
   }
@@ -529,14 +611,29 @@ class Match {
     this.events.push({ t: 'gameover', winner, reason });
   }
 
-  // ---------- Снапшот для клиента ----------
-  snapshot() {
+  // ---------- Снапшоты для клиентов ----------
+  // События забираются один раз за тик, затем раздаются в персональные снапшоты.
+  takeEvents() {
     const ev = this.events;
     this.events = [];
+    return ev;
+  }
+
+  // Персональный снапшот: во время планирования вражеские постройки текущего
+  // раунда скрыты, чужая очередь юнитов не видна никогда.
+  snapshotFor(slot, events) {
+    const hideEnemyNew = this.phase === 'plan' && !this.over;
+    const q = this.queued[slot];
+    const queueAgg = {};
+    for (const type of q) queueAgg[type] = (queueAgg[type] || 0) + 1;
     return {
       tick: this.tick,
       time: Math.round(this.time * 10) / 10,
       sd: this.time >= this.balance.match.suddenDeathAtSec,
+      phase: this.phase,
+      round: this.round,
+      planLeft: this.phase === 'plan' ? Math.max(0, Math.round(this.planLeft * 10) / 10) : 0,
+      myQueue: queueAgg,
       players: this.players.map(p => ({
         slot: p.slot, name: p.name, isBot: p.isBot,
         gold: Math.floor(p.gold), income: p.income,
@@ -549,12 +646,17 @@ class Match {
         Math.round((u.hp / u.hpMax) * 100), Math.round(u.dir * 100) / 100,
         this.time < u.slowUntil ? 1 : 0,
       ]),
-      buildings: this.buildings.map(b => [
-        b.id, b.owner, b.type, b.cx, b.cy, Math.round((b.hp / b.hpMax) * 100),
-      ]),
-      events: ev,
+      buildings: this.buildings
+        .filter(b => !(hideEnemyNew && b.owner !== slot && b.bornRound === this.round))
+        .map(b => [b.id, b.owner, b.type, b.cx, b.cy, Math.round((b.hp / b.hpMax) * 100)]),
+      events: events.filter(ev => !(ev.t === 'build' && ev.owner !== undefined && ev.owner !== slot && hideEnemyNew)),
       over: this.over, winner: this.winner, reason: this.endReason,
     };
+  }
+
+  // Полный снапшот (для тестов и совместимости): без скрытия, события забираются.
+  snapshot() {
+    return this.snapshotFor(0, this.takeEvents());
   }
 
   // Стартовые данные (карта и т.п.) — шлются один раз.

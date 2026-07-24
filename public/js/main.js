@@ -217,8 +217,22 @@ net.on('matchStart', (data) => {
   if (tutorial.shouldShow()) setTimeout(() => tutorial.start(), 600);
 });
 
+let lastPhase = null;
 net.on('snap', (msg) => {
   gs.pushSnapshot(msg.s, ev => renderer.addEvent(ev));
+  // Смена фазы: тост + сброс режима стройки при выходе войск.
+  const ph = msg.s.phase;
+  if (ph && ph !== lastPhase) {
+    if (lastPhase !== null && !msg.s.over) {
+      if (ph === 'battle') {
+        stopPlacing();
+        toast('⚔ Бой! Войска выходят', 'info');
+      } else {
+        toast(`Раунд ${msg.s.round} — планируйте (противника не видно)`, 'info');
+      }
+    }
+    lastPhase = ph;
+  }
 });
 
 net.on('reject', (msg) => toast(msg.reason, 'err'));
@@ -287,11 +301,15 @@ function shopButton(kind, key, spec, colors) {
   return btn;
 }
 
+function inPlanPhase() { return gs.curr && gs.curr.phase === 'plan'; }
+
 function orderUnits(key) {
+  if (!inPlanPhase()) { toast('Заказ юнитов — только в фазе планирования'); return; }
   net.send({ t: 'spawn', unit: key });
 }
 
 function startPlacing(key) {
+  if (!inPlanPhase()) { toast('Строить можно только в фазе планирования'); return; }
   ui.placing = { type: key, cx: null, cy: null, valid: false };
   ui.selectedBuilding = null;
   $('#selection-panel').classList.add('hidden');
@@ -669,19 +687,57 @@ function updateHud(now) {
   const sdAt = gs.balance.match.suddenDeathAtSec;
   timerEl.classList.toggle('warn', t > sdAt - 60 && t < sdAt);
   $('#hud-sd').classList.toggle('hidden', !gs.curr.sd);
+  // Фазовый баннер: планирование с обратным отсчётом / бой.
+  const phaseEl = $('#hud-phase');
+  if (gs.curr.phase === 'plan') {
+    const left = Math.max(0, Math.ceil(gs.curr.planLeft));
+    phaseEl.textContent = `Раунд ${gs.curr.round} · планирование 0:${String(left).padStart(2, '0')}`;
+    phaseEl.className = 'hud-phase plan' + (left <= 5 ? ' urgent' : '');
+  } else {
+    phaseEl.textContent = `⚔ Раунд ${gs.curr.round} · БОЙ`;
+    phaseEl.className = 'hud-phase battle';
+  }
+  updateQueueRow();
   $('#hud-my-hp').style.width = (me.baseHp / me.baseHpMax * 100) + '%';
   $('#hud-my-hp-text').textContent = `${me.baseHp} / ${me.baseHpMax}`;
   $('#hud-enemy-hp').style.width = (enemy.baseHp / enemy.baseHpMax * 100) + '%';
   $('#hud-enemy-hp-text').textContent = `${enemy.baseHp} / ${enemy.baseHpMax}`;
-  // Блокировка кнопок по золоту.
+  // Блокировка кнопок: не хватает золота или идёт бой.
+  const battle = gs.curr.phase === 'battle';
   document.querySelectorAll('.shop-btn').forEach(btn => {
     const spec = (btn.dataset.kind === 'unit' ? gs.balance.units : gs.balance.buildings)[btn.dataset.key];
-    btn.classList.toggle('locked', me.gold < spec.cost);
+    btn.classList.toggle('locked', battle || me.gold < spec.cost);
   });
   // Мобильный призрак стройки: пере-валидируем (золото/занятость меняются).
   if (IS_TOUCH && ui.placing && ui.placing.cx !== null) {
     ui.placing.valid = placementValid(ui.placing.type, ui.placing.cx, ui.placing.cy);
     updatePlaceBar();
+  }
+}
+
+// Очередь юнитов текущего раунда: чипы с количеством, клик = отменить пачку.
+let lastQueueJson = '';
+function updateQueueRow() {
+  const q = gs.curr.myQueue || {};
+  const json = JSON.stringify(q) + gs.curr.phase;
+  if (json === lastQueueJson) return;
+  lastQueueJson = json;
+  const row = $('#queue-row');
+  row.innerHTML = '';
+  const entries = Object.entries(q);
+  if (!entries.length) {
+    row.innerHTML = `<span class="queue-empty">${gs.curr.phase === 'plan' ? 'очередь пуста' : 'войска в бою'}</span>`;
+    return;
+  }
+  for (const [type, count] of entries) {
+    const spec = gs.balance.units[type];
+    if (!spec) continue;
+    const chip = document.createElement('span');
+    chip.className = 'queue-chip';
+    chip.title = `Убрать пачку (${spec.name}) — вернёт ◉ ${spec.cost}`;
+    chip.innerHTML = `${spec.name} ×${count} <span class="x">✕</span>`;
+    chip.addEventListener('click', () => net.send({ t: 'unqueue', unit: type }));
+    row.appendChild(chip);
   }
 }
 

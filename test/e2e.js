@@ -86,6 +86,8 @@ async function waitFor(fn, timeoutMs, what) {
     check(!badPatch.body.ok, 'нечисловой патч отклонён');
     const reset = await fetchJson('/api/admin/balance/reset', { method: 'POST', headers: auth });
     check(reset.body.ok && reset.body.balance.units.scout.cost === 70, 'сброс к дефолту');
+    // Ускоряем раунды для дальнейших тестов (применится к новым матчам).
+    await fetchJson('/api/admin/balance', { method: 'POST', headers: auth, body: { patch: { match: { planPhaseSec: 5, battleMinSec: 1 } } } });
 
     console.log('3. PvP: два клиента находят друг друга');
     const c1 = await wsClient('Аня');
@@ -99,11 +101,9 @@ async function waitFor(fn, timeoutMs, what) {
     check(c1.init.yourSlot !== c2.init.yourSlot, 'слоты разные');
     check(c1.init.map.tiles.length === c1.init.map.w * c1.init.map.h, 'карта пришла');
 
-    console.log('4. Команды и снапшоты');
+    console.log('4. Раунды: планирование, скрытность, бой');
     await waitFor(() => c1.snap, 3000, 'первый снапшот');
-    send(c1, { t: 'spawn', unit: 'soldier' });
-    await waitFor(() => c1.snap && c1.snap.units.length > 0, 3000, 'юниты в снапшоте');
-    check(true, 'спавн юнитов через WS работает');
+    check(c1.snap.phase === 'plan', 'матч начинается с планирования');
     // Поиск клетки под постройку.
     const map = c1.init.map, slot = c1.init.yourSlot;
     let bx = -1, by = -1;
@@ -116,11 +116,25 @@ async function waitFor(fn, timeoutMs, what) {
     }
     send(c1, { t: 'build', type: 'mine', x: bx, y: by });
     await waitFor(() => c1.snap.buildings.length > 0, 3000, 'постройка в снапшоте');
-    check(true, 'строительство через WS работает');
+    check(true, 'строительство в фазе планирования работает');
+    check(c2.snap.buildings.length === 0, 'противник НЕ видит постройку во время планирования');
     const rejBefore = c1.msgs.filter(m => m.t === 'reject').length;
     send(c1, { t: 'build', type: 'mine', x: bx, y: by });
     await waitFor(() => c1.msgs.filter(m => m.t === 'reject').length > rejBefore, 3000, 'reject');
     check(true, 'занятая клетка отклоняется');
+    send(c1, { t: 'spawn', unit: 'soldier' });
+    await waitFor(() => c1.snap.myQueue && c1.snap.myQueue.soldier > 0, 3000, 'очередь юнитов');
+    check(true, 'юниты встали в очередь');
+    check(!c2.snap.myQueue || !c2.snap.myQueue.soldier, 'противник не видит чужую очередь');
+    send(c1, { t: 'unqueue', unit: 'soldier' });
+    await waitFor(() => !c1.snap.myQueue.soldier, 3000, 'отмена очереди');
+    check(true, 'отмена пачки из очереди работает');
+    send(c1, { t: 'spawn', unit: 'soldier' });
+    await waitFor(() => c1.snap.phase === 'battle', 10000, 'начало боя');
+    check(true, 'фаза боя началась');
+    await waitFor(() => c1.snap.units.length > 0, 3000, 'войска на поле');
+    check(true, 'очередь вышла на поле в начале боя');
+    check(c2.snap.buildings.length === 1, 'в бою постройка противника раскрылась');
 
     console.log('5. Live-матчи в админке и сдача');
     const matches = await fetchJson('/api/admin/matches', { headers: auth });

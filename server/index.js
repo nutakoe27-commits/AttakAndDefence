@@ -116,7 +116,7 @@ wss.on('connection', (ws) => {
         lobby.leaveRoomByWs(ws);
         ws.send(JSON.stringify({ t: 'roomLeft' }));
         break;
-      case 'spawn': case 'build': case 'sell': case 'surrender': {
+      case 'spawn': case 'unqueue': case 'build': case 'sell': case 'surrender': {
         const ref = ws.playerToken ? lobby.byToken.get(ws.playerToken) : null;
         if (ref && ref.runner.sockets[ref.slot] === ws) ref.runner.handleCommand(ref.slot, msg);
         break;

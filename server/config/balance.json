@@ -10,6 +10,10 @@
   },
   "match": {
     "targetDurationMin": 12,
+    "planPhaseSec": 20,
+    "battleMinSec": 3,
+    "battleMaxSec": 60,
+    "fatiguePctPerSec": 0.08,
     "suddenDeathAtSec": 630,
     "suddenDeathRampSec": 120,
     "suddenDeathDecayPerSec": 9,
@@ -162,7 +166,7 @@
     },
     "barricade": {
       "name": "Баррикада",
-      "desc": "Дешёвая преграда. Заставляет врагов идти в обход или прогрызать путь.",
+      "desc": "Не пропускает никого — даже свои войска пойдут в обход или будут её ломать.",
       "kind": "defense",
       "cost": 50,
       "hp": 550,

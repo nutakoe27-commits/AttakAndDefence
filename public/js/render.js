@@ -251,6 +251,7 @@ export class Renderer {
     ctx.drawImage(this.terrain, 0, 0);
     this.drawWaterShimmer(ctx);
     this.drawTerritoryTint(ctx);
+    if (state.phase === 'plan') this.drawPlanFog(ctx);
 
     // Подсветка размещения
     if (ui && ui.placing) this.drawPlacement(ctx, ui);
@@ -321,6 +322,39 @@ export class Renderer {
         }
       }
     }
+    ctx.restore();
+  }
+
+  // Во время планирования вражеская половина в «тумане»: сервер и так не шлёт
+  // свежие данные, а туман объясняет игроку, почему там ничего не меняется.
+  drawPlanFog(ctx) {
+    const { w, h } = this.map;
+    const mid = w / 2 * TILE;
+    const myLeft = this.mySlot === 0;
+    const x0 = myLeft ? mid : 0;
+    ctx.save();
+    const g = ctx.createLinearGradient(myLeft ? mid : mid, 0, myLeft ? mid + TILE * 6 : mid - TILE * 6, 0);
+    g.addColorStop(0, 'rgba(10,14,22,.25)');
+    g.addColorStop(1, 'rgba(10,14,22,.55)');
+    ctx.fillStyle = g;
+    ctx.fillRect(x0, 0, mid, h * TILE);
+    // Лёгкие «клубы» тумана.
+    ctx.globalAlpha = .08;
+    ctx.fillStyle = '#cdd8e8';
+    for (let i = 0; i < 14; i++) {
+      const fx = x0 + ((i * 137.5 + this.time * 9) % mid);
+      const fy = ((i * 89.3) % (h * TILE));
+      const r = TILE * (1.6 + (i % 4) * 0.7);
+      ctx.beginPath(); ctx.arc(fx, fy, r, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    // Знаки вопроса у вражеской базы.
+    const eb = this.map.bases[1 - this.mySlot];
+    ctx.font = `bold ${TILE * 0.9}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(200,215,235,.35)';
+    const bob = Math.sin(this.time * 2) * 4;
+    ctx.fillText('?', (eb.x + .5) * TILE, (eb.y - 1.8) * TILE + bob);
     ctx.restore();
   }
 

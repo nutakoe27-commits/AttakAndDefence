@@ -69,6 +69,10 @@ export class GameState {
     return {
       time: this.curr.time,
       sd: this.curr.sd,
+      phase: this.curr.phase,
+      round: this.curr.round,
+      planLeft: this.curr.planLeft,
+      myQueue: this.curr.myQueue || {},
       players: this.curr.players,
       units,
       buildings: this.curr.buildings.map(unpackB),

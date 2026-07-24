@@ -123,7 +123,7 @@
       if (!r.active.length) {
         at.innerHTML = '<tr><td style="color:var(--muted)">Сейчас нет активных матчей</td></tr>';
       } else {
-        at.innerHTML = '<tr><th>ID</th><th>Время</th><th>Игроки</th><th>База</th><th>Золото</th><th>Армия</th><th>Постройки</th><th></th></tr>' +
+        at.innerHTML = '<tr><th>ID</th><th>Время</th><th>Фаза</th><th>Игроки</th><th>База</th><th>Золото</th><th>Армия</th><th>Постройки</th><th></th></tr>' +
           r.active.map(m => {
             const rows = m.players.map(p => `
               <div>${p.isBot ? '<span class="tag bot">БОТ</span>' : '<span class="tag human">ЧЕЛ</span>'}
@@ -132,8 +132,9 @@
             const gold = m.players.map(p => `<div>◉ ${p.gold} <span style="color:var(--muted)">(+${p.income}/с)</span></div>`).join('');
             const units = m.players.map(p => `<div>${p.units}</div>`).join('');
             const blds = m.players.map(p => `<div>${p.buildings}</div>`).join('');
+            const phase = m.phase === 'plan' ? `📝 план R${m.round}` : `⚔ бой R${m.round}`;
             return `<tr>
-              <td>${m.id}</td><td>${fmtDur(m.time)}</td>
+              <td>${m.id}</td><td>${fmtDur(m.time)}</td><td>${phase}</td>
               <td>${rows}</td><td>${hp}</td><td>${gold}</td><td>${units}</td><td>${blds}</td>
               <td><button class="btn btn-danger btn-small" data-stop="${m.id}">Остановить</button></td>
             </tr>`;
@@ -177,6 +178,8 @@
     speed: 'Скорость', armor: 'Броня', bonusVsBuildings: '×постройкам', healPerSec: 'Лечение/с',
     healRadius: 'Радиус лечения', income: 'Доход/с', incomeMult: '+доход, доля', maxCount: 'Макс. шт',
     splash: 'Сплэш', slowFactor: 'Замедление, доля', slowDuration: 'Замедление, с',
+    planPhaseSec: 'Планирование, с', battleMinSec: 'Мин. бой, с', battleMaxSec: 'Макс. бой, с',
+    fatiguePctPerSec: 'Усталость, доля HP/с',
     startGold: 'Стартовое золото', baseIncome: 'Базовый доход/с', incomeTickSeconds: 'Период дохода, с',
     baseHp: 'HP базы', refundRatio: 'Возврат при продаже', targetDurationMin: 'Целевая длит., мин',
     suddenDeathAtSec: 'Sudden death, с', suddenDeathRampSec: 'Разгон SD, с', suddenDeathDecayPerSec: 'Распад баз, HP/с',
