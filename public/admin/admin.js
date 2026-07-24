@@ -176,11 +176,11 @@
   const FIELD_LABELS = {
     cost: 'Цена', pack: 'Пачка, шт', hp: 'HP', dmg: 'Урон', attackRate: 'Атак/с', range: 'Дальность',
     speed: 'Скорость', armor: 'Броня', bonusVsBuildings: '×постройкам', healPerSec: 'Лечение/с',
-    healRadius: 'Радиус лечения', income: 'Доход/с', incomeMult: '+доход, доля', maxCount: 'Макс. шт',
+    healRadius: 'Радиус лечения', incomePerRound: 'Доход/раунд', incomeMult: '+доход, доля', maxCount: 'Макс. шт',
     splash: 'Сплэш', slowFactor: 'Замедление, доля', slowDuration: 'Замедление, с',
     planPhaseSec: 'Планирование, с', battleMinSec: 'Мин. бой, с', battleMaxSec: 'Макс. бой, с',
     fatiguePctPerSec: 'Усталость, доля HP/с',
-    startGold: 'Стартовое золото', baseIncome: 'Базовый доход/с', incomeTickSeconds: 'Период дохода, с',
+    startGold: 'Стартовое золото', baseIncomePerRound: 'Базовый доход/раунд',
     baseHp: 'HP базы', refundRatio: 'Возврат при продаже', targetDurationMin: 'Целевая длит., мин',
     suddenDeathAtSec: 'Sudden death, с', suddenDeathRampSec: 'Разгон SD, с', suddenDeathDecayPerSec: 'Распад баз, HP/с',
     hardLimitSec: 'Жёсткий лимит, с', tickRate: 'Тикрейт', difficulty: 'Сложность',

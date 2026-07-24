@@ -206,7 +206,6 @@ class Match {
     this.tick++;
     this.time += this.dt;
 
-    this.updateIncome();
     this.updateSuddenDeathDecay();
 
     if (this.phase === 'plan') {
@@ -257,6 +256,7 @@ class Match {
     this.round++;
     this.phase = 'plan';
     this.planLeft = this.balance.match.planPhaseSec ?? 20;
+    this.payRoundIncome();
     this.events.push({ t: 'phase', phase: 'plan', round: this.round });
   }
 
@@ -309,25 +309,27 @@ class Match {
     for (const p of this.players) p.baseHp -= decay;
   }
 
-  updateIncome() {
-    this.incomeAcc += this.dt;
+  // Доход выплачивается разом в начале каждого раунда (кроме первого — на него
+  // есть стартовое золото). Затягивание боя больше не приносит халявных денег.
+  projectedIncome(slot) {
     const eco = this.balance.economy;
-    if (this.incomeAcc >= eco.incomeTickSeconds) {
-      this.incomeAcc -= eco.incomeTickSeconds;
-      for (const p of this.players) {
-        let income = eco.baseIncome;
-        let mult = 1;
-        for (const b of this.buildings) {
-          if (b.owner !== p.slot) continue;
-          const spec = this.balance.buildings[b.type];
-          if (spec.income) income += spec.income;
-          if (spec.incomeMult) mult += spec.incomeMult;
-        }
-        const gained = Math.round(income * mult);
-        p.income = gained;
-        p.gold += gained;
-        p.goldEarned += gained;
-      }
+    let income = eco.baseIncomePerRound ?? 0;
+    let mult = 1;
+    for (const b of this.buildings) {
+      if (b.owner !== slot) continue;
+      const spec = this.balance.buildings[b.type];
+      if (spec.incomePerRound) income += spec.incomePerRound;
+      if (spec.incomeMult) mult += spec.incomeMult;
+    }
+    return Math.round(income * mult);
+  }
+
+  payRoundIncome() {
+    for (const p of this.players) {
+      const gained = this.projectedIncome(p.slot);
+      p.income = gained;
+      p.gold += gained;
+      p.goldEarned += gained;
     }
   }
 
@@ -636,7 +638,7 @@ class Match {
       myQueue: queueAgg,
       players: this.players.map(p => ({
         slot: p.slot, name: p.name, isBot: p.isBot,
-        gold: Math.floor(p.gold), income: p.income,
+        gold: Math.floor(p.gold), income: this.projectedIncome(p.slot),
         baseHp: Math.max(0, Math.round(p.baseHp)), baseHpMax: p.baseHpMax,
         kills: p.unitsKilled, losses: p.unitsLost,
       })),

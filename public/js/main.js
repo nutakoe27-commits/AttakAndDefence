@@ -228,7 +228,8 @@ net.on('snap', (msg) => {
         stopPlacing();
         toast('⚔ Бой! Войска выходят', 'info');
       } else {
-        toast(`Раунд ${msg.s.round} — планируйте (противника не видно)`, 'info');
+        const me = msg.s.players[gs.mySlot];
+        toast(`Раунд ${msg.s.round} · +${me ? me.income : ''} ◉ — планируйте!`, 'info');
       }
     }
     lastPhase = ph;
@@ -367,7 +368,7 @@ function showTooltip(el, kind, key, spec) {
     if (spec.dmg) rows.push(`Урон ${spec.dmg} · Скорострельность ${spec.attackRate}/с · Радиус ${spec.range}`);
     if (spec.splash) rows.push(`Площадь взрыва: ${spec.splash}`);
     if (spec.slowFactor) rows.push(`Замедление ${Math.round(spec.slowFactor * 100)}% на ${spec.slowDuration}с`);
-    if (spec.income) rows.push(`Доход +${spec.income}/с`);
+    if (spec.incomePerRound) rows.push(`Доход +${spec.incomePerRound} за раунд`);
     if (spec.incomeMult) rows.push(`Доход +${Math.round(spec.incomeMult * 100)}%${spec.maxCount ? ` · максимум ${spec.maxCount}` : ''}`);
   }
   tooltipEl.innerHTML = `<div class="t-name">${spec.name} <span class="t-cost">◉ ${spec.cost}</span></div>
@@ -591,6 +592,43 @@ function handleTap(sx, sy) {
 // Подавление синтетических mouse-событий после тача (страховка к preventDefault).
 function isGhostMouse() { return Date.now() - lastTouchAt < 700; }
 
+// ---------- Полноэкранный режим ----------
+// Особенно важен на мобилке: убирает адресную строку браузера.
+// На iOS Safari Fullscreen API для страниц недоступен — кнопки просто не показываем.
+const docEl = document.documentElement;
+const fsSupported = !!(docEl.requestFullscreen || docEl.webkitRequestFullscreen);
+
+function isFullscreen() {
+  return !!(document.fullscreenElement || document.webkitFullscreenElement);
+}
+
+function toggleFullscreen() {
+  try {
+    if (isFullscreen()) {
+      (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    } else {
+      const p = (docEl.requestFullscreen || docEl.webkitRequestFullscreen).call(docEl);
+      if (p && p.catch) p.catch(() => {});
+    }
+  } catch { /* браузер отказал — ничего страшного */ }
+}
+
+if (fsSupported) {
+  $('#btn-fullscreen').classList.remove('hidden');
+  if (IS_TOUCH) $('#btn-fullscreen-menu').classList.remove('hidden');
+  $('#btn-fullscreen').addEventListener('click', toggleFullscreen);
+  $('#btn-fullscreen-menu').addEventListener('click', toggleFullscreen);
+  const onFsChange = () => {
+    const inFs = isFullscreen();
+    $('#btn-fullscreen').textContent = inFs ? '🡼' : '⛶';
+    $('#btn-fullscreen').title = inFs ? 'Выйти из полного экрана' : 'На весь экран';
+    $('#btn-fullscreen-menu').textContent = inFs ? '🡼 Обычный режим' : '⛶ На весь экран';
+    setTimeout(() => { renderer.resize(); checkOrientation(); }, 150);
+  };
+  document.addEventListener('fullscreenchange', onFsChange);
+  document.addEventListener('webkitfullscreenchange', onFsChange);
+}
+
 function tryBuild() {
   const p = ui.placing;
   if (!p || p.cx === null) return;
@@ -679,7 +717,7 @@ function updateHud(now) {
   lastHudUpdate = now;
   const me = gs.me(), enemy = gs.enemy();
   $('#hud-gold').textContent = me.gold;
-  $('#hud-income').textContent = `+${me.income}/с`;
+  $('#hud-income').textContent = `+${me.income} за раунд`;
   const t = Math.max(0, gs.curr.time | 0);
   const mm = String((t / 60) | 0).padStart(2, '0'), ss = String(t % 60).padStart(2, '0');
   const timerEl = $('#hud-timer');

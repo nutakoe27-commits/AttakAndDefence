@@ -68,10 +68,36 @@ console.log('2. Раундовая механика: планирование и
   check(!m.build(0, 'mine', 5, 5).ok, 'стройка во время боя отклонена');
   check(!m.spawnUnits(0, 'scout').ok, 'заказ юнитов во время боя отклонён');
 
-  // Доход тикает в любой фазе.
-  const goldBefore = m.players[1].gold;
-  for (let i = 0; i < bal.match.tickRate * 3; i++) m.step();
-  check(m.players[1].gold > goldBefore, 'пассивный доход начисляется');
+  // Доход больше НЕ капает по секундам — только выплата в начале раунда.
+  const goldMid = m.players[1].gold;
+  for (let i = 0; i < bal.match.tickRate * 3; i++) m.step(); // бой продолжается
+  check(m.players[1].gold === goldMid, 'во время боя золото не капает');
+}
+
+console.log('2б. Доход выплачивается в начале раунда');
+{
+  const bal = balance.loadDefault();
+  const m = new Match('inc', bal, [{ name: 'A' }, { name: 'B' }], 42);
+  const start = m.players[0].gold;
+  // Планирование идёт — золота не прибавляется.
+  for (let i = 0; i < bal.match.tickRate * 5; i++) m.step();
+  check(m.players[0].gold === start, 'во время планирования золото не капает');
+  // Пустой бой -> раунд 2 -> выплата.
+  m.planLeft = 0.01;
+  while (m.round === 1) m.step();
+  check(m.players[0].gold === start + bal.economy.baseIncomePerRound, `в начале раунда 2 выплачен базовый доход (+${bal.economy.baseIncomePerRound})`);
+  // Шахта увеличивает выплату следующего раунда.
+  let placed = false;
+  outer2: for (let y = 2; y < m.map.h - 2; y++) for (let x = 2; x < m.map.w / 2; x++) {
+    if (m.placementError(0, 'mine', x, y) === null) { m.build(0, 'mine', x, y); placed = true; break outer2; }
+  }
+  check(placed, 'шахта построена');
+  const mineSpec = bal.buildings.mine;
+  check(m.projectedIncome(0) === bal.economy.baseIncomePerRound + mineSpec.incomePerRound, 'прогноз дохода учитывает шахту');
+  const beforeR3 = m.players[0].gold;
+  m.planLeft = 0.01;
+  while (m.round === 2) m.step();
+  check(m.players[0].gold === beforeR3 + bal.economy.baseIncomePerRound + mineSpec.incomePerRound, 'выплата раунда 3 включает доход шахты');
 }
 
 console.log('3. Баррикады не пропускают даже своих');

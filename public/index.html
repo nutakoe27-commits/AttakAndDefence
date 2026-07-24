@@ -25,6 +25,7 @@
       <button id="btn-play" class="btn btn-primary btn-big">⚔ В БОЙ</button>
       <button id="btn-friend" class="btn">👥 Играть с другом</button>
       <button id="btn-howto" class="btn btn-ghost">Как играть</button>
+      <button id="btn-fullscreen-menu" class="btn btn-ghost hidden">⛶ На весь экран</button>
     </div>
     <div class="menu-footer">
       <span id="conn-status" class="conn-status">подключение…</span>
@@ -54,7 +55,7 @@
       <div class="hp-bar"><div class="hp-fill me" id="hud-my-hp"></div><span class="hp-text" id="hud-my-hp-text"></span></div>
     </div>
     <div class="hud-center">
-      <div class="hud-gold" id="hud-gold-wrap" title="Золото и доход в секунду">
+      <div class="hud-gold" id="hud-gold-wrap" title="Золото и доход за раунд">
         <span class="gold-icon">◉</span><span id="hud-gold">0</span>
         <span class="hud-income" id="hud-income">+0/с</span>
       </div>
@@ -80,6 +81,7 @@
       <div class="hud-buttons" id="build-buttons"></div>
     </div>
     <div class="hud-group hud-group-misc">
+      <button id="btn-fullscreen" class="btn btn-small hidden" title="На весь экран">⛶</button>
       <button id="btn-surrender" class="btn btn-danger btn-small" title="Сдаться">🏳</button>
     </div>
   </div>
@@ -165,7 +167,7 @@
     <div class="howto-grid">
       <div><b>🎯 Цель.</b> Уничтожьте вражескую базу раньше, чем уничтожат вашу. Игра идёт <b>раундами</b>: 20 секунд планирования → бой до гибели всех войск. После 10:30 — «внезапная смерть»: базы разрушаются сами.</div>
       <div><b>🕵 Скрытность.</b> Во время планирования <b>противника не видно</b>: его новые постройки и армия раскрываются только в момент выхода войск. Просчитывайте, чего ждать, — и блефуйте сами.</div>
-      <div><b>◉ Экономика.</b> Золото капает пассивно всё время. Стройте <b>шахты</b> и <b>банки</b>, чтобы ускорить доход — экономика решает затяжные партии.</div>
+      <div><b>◉ Экономика.</b> Золото выдаётся разом <b>в начале каждого раунда</b>. <b>Шахты</b> добавляют к выплате, <b>банки</b> умножают её. Вложение в экономику окупается через пару раундов — решайте, когда копить, а когда давить.</div>
       <div><b>⚔ Атака.</b> Юниты встают в очередь и выходят все разом в начале боя, дальше сражаются сами. Комбинируйте: танки впереди, лучницы сзади, целитель рядом.</div>
       <div><b>🏰 Оборона.</b> Башни стреляют сами — ставьте их в узких проходах. <b>Баррикады не пропускают никого</b>, даже ваши войска: ими можно строить лабиринты для врага, но не заприте самих себя.</div>
       <div><b>🗺 Карта.</b> Каждый матч — новая процедурная карта. Строить можно только на своей половине, на клетках земли (не в лесу и не на скалах).</div>

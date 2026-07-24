@@ -2,8 +2,7 @@
   "version": 1,
   "economy": {
     "startGold": 350,
-    "baseIncome": 9,
-    "incomeTickSeconds": 1,
+    "baseIncomePerRound": 200,
     "baseHp": 4200,
     "refundRatio": 0.5,
     "baseTurret": { "dmg": 32, "attackRate": 2.0, "range": 4.4 }
@@ -111,11 +110,11 @@
   "buildings": {
     "mine": {
       "name": "Шахта",
-      "desc": "Добывает золото. Фундамент вашей экономики.",
+      "desc": "Добывает золото каждый раунд. Фундамент вашей экономики.",
       "kind": "economy",
       "cost": 160,
       "hp": 320,
-      "income": 6,
+      "incomePerRound": 70,
       "hotkey": "q"
     },
     "bank": {

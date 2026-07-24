@@ -18,7 +18,9 @@ class Bot {
     this.buildSpots = this.findBuildSpots();
     this.chokeSpots = this.findChokeSpots();
     // Разведка прошлого боя.
-    this.intel = { incursion: 0, hpAtBattleStart: match.players[slot].baseHp, hpLostLastBattle: 0 };
+    this.intel = { incursion: 0, hpLostLastBattle: 0 };
+    this.battleSnap = null; // {hp, t} на момент начала боя
+    this.reserve = 0;       // золото, зарезервированное под армию этого раунда
   }
 
   // Клетки своей половины, пригодные для застройки, отсортированные по близости к базе.
@@ -61,6 +63,7 @@ class Bot {
     if (m.over) return;
 
     if (m.phase === 'battle') {
+      if (!this.battleSnap) this.battleSnap = { hp: m.players[this.slot].baseHp, t: m.time };
       // Разведка: считаем максимум вражеских юнитов на нашей половине за бой.
       const half = m.map.w / 2;
       let n = 0;
@@ -74,12 +77,20 @@ class Bot {
 
     // Фаза планирования.
     if (this.plannedRound !== m.round) {
-      // Начало нового раунда: фиксируем потери прошлого боя, сбрасываем счётчики.
+      // Начало нового раунда: фиксируем потери прошлого боя (без учёта распада sudden death).
       const me = m.players[this.slot];
-      this.intel.hpLostLastBattle = Math.max(0, this.intel.hpAtBattleStart - me.baseHp);
-      this.intel.hpAtBattleStart = me.baseHp;
+      if (this.battleSnap) {
+        let delta = this.battleSnap.hp - me.baseHp;
+        const mc = m.balance.match;
+        if (m.time > mc.suddenDeathAtSec) delta -= (mc.suddenDeathDecayPerSec ?? 0) * (m.time - this.battleSnap.t);
+        this.intel.hpLostLastBattle = Math.max(0, delta);
+        this.battleSnap = null;
+      }
       this.plannedRound = m.round;
       this.waveDone = false;
+      // Ключ к балансу: ~45% текущего золота резервируется под армию —
+      // даже под давлением бот не уходит в глухую оборону без войск.
+      this.reserve = me.gold * (0.4 + Math.random() * 0.15);
       this.actionTimer = 0.6 + Math.random() * 0.8;
     }
 
@@ -99,6 +110,11 @@ class Bot {
 
   me() { return this.match.players[this.slot]; }
 
+  // Можно ли потратить на постройку, не залезая в армейский резерв.
+  canSpend(cost) {
+    return this.me().gold - cost >= this.reserve;
+  }
+
   myBuildings(type) {
     return this.match.buildings.filter(b => b.owner === this.slot && (!type || b.type === type));
   }
@@ -116,7 +132,7 @@ class Bot {
 
     // 2. Ранний приоритет: хотя бы одна башня в первые раунды.
     const defTowers = this.myBuildings().filter(b => m.balance.buildings[b.type].kind === 'defense' && b.type !== 'barricade').length;
-    if (m.round <= 3 && defTowers === 0 && p.gold >= m.balance.buildings.arrow.cost) {
+    if (m.round <= 3 && defTowers === 0 && this.canSpend(m.balance.buildings.arrow.cost)) {
       this.placeChoke('arrow');
       return;
     }
@@ -129,19 +145,19 @@ class Bot {
   }
 
   growEconomy() {
-    const m = this.match, p = this.me();
+    const m = this.match;
     const mines = this.myBuildings('mine').length;
     const banks = this.myBuildings('bank').length;
     const bankSpec = m.balance.buildings.bank;
-    if (mines >= 4 && banks < (bankSpec.maxCount || 5) && p.gold >= bankSpec.cost * 1.2) {
+    if (mines >= 4 && banks < (bankSpec.maxCount || 5) && this.canSpend(bankSpec.cost)) {
       this.placeSafe('bank');
       return;
     }
-    if (p.gold >= m.balance.buildings.mine.cost) this.placeSafe('mine');
+    if (this.canSpend(m.balance.buildings.mine.cost)) this.placeSafe('mine');
   }
 
   growDefense() {
-    const m = this.match, p = this.me();
+    const m = this.match;
     const towers = this.myBuildings().filter(b => m.balance.buildings[b.type].kind === 'defense');
     const roll = Math.random();
     let type = 'arrow';
@@ -151,16 +167,16 @@ class Bot {
     // и ставит их сбоку от прямой линии на свою базу).
     if (towers.length >= 2 && roll > 0.85) type = 'barricade';
     const spec = m.balance.buildings[type];
-    if (p.gold < spec.cost) return false;
+    if (!this.canSpend(spec.cost)) return false;
     return this.placeChoke(type);
   }
 
   queueWave() {
     const m = this.match, p = this.me();
     this.wavesQueued++;
-    // Бюджет волны растёт от раунда к раунду; на старте бот скромнее.
-    const share = Math.min(0.8, 0.35 + this.wavesQueued * 0.05);
-    let budget = p.gold * share;
+    this.reserve = 0; // резерв высвобождается в армию
+    // Тратим почти всё: небольшая заначка переносится на следующий раунд.
+    let budget = p.gold * (0.8 + Math.min(0.15, this.wavesQueued * 0.02));
     const late = m.time > 300;
     const comps = late
       ? [['tank', 'healer', 'soldier', 'breaker'], ['breaker', 'breaker', 'soldier', 'archer'], ['tank', 'archer', 'archer', 'healer']]
