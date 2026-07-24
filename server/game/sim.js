@@ -3,7 +3,7 @@
 // клиент лишь рендерит снапшоты и шлёт команды.
 const { generateMap, T, walkable } = require('./mapgen');
 
-const UNIT_CAP = 70;          // максимум юнитов на игрока
+const UNIT_CAP = 90;          // максимум юнитов на игрока
 const FOREST_SPEED = 0.55;    // множитель скорости в лесу
 const FOREST_COST = 2;
 
@@ -306,7 +306,8 @@ class Match {
   // есть стартовое золото). Затягивание боя больше не приносит халявных денег.
   projectedIncome(slot) {
     const eco = this.balance.economy;
-    let income = eco.baseIncomePerRound ?? 0;
+    // Базовый доход растёт с каждым раундом — к концу матча экономика «раскручена».
+    let income = (eco.baseIncomePerRound ?? 0) + (eco.incomeGrowthPerRound ?? 0) * Math.max(0, this.round - 1);
     let mult = 1;
     for (const b of this.buildings) {
       if (b.owner !== slot) continue;
@@ -347,6 +348,7 @@ class Match {
       }
 
       // 1. Ищем цель: ближайший вражеский юнит в радиусе атаки (+ небольшой захват).
+      // Башни и постройки юниты НЕ атакуют — только друг друга и вражескую базу.
       const aggroRange = Math.max(spec.range, 1.6);
       let target = null, bestD = Infinity;
       for (const e of this.units) {
@@ -354,27 +356,15 @@ class Match {
         const d = Math.hypot(e.x - u.x, e.y - u.y);
         if (d < bestD && d <= aggroRange + 0.4) { bestD = d; target = e; }
       }
-      // Разрушитель предпочитает постройки, если есть в радиусе.
-      let btarget = null, bd = Infinity;
-      for (const b of this.buildings) {
-        if (b.owner !== enemySlot) continue;
-        const d = Math.hypot(b.cx + 0.5 - u.x, b.cy + 0.5 - u.y);
-        if (d < bd && d <= Math.max(spec.range, 1.5) + 0.3) { bd = d; btarget = b; }
-      }
       const enemyBase = this.map.bases[enemySlot];
       const baseD = Math.hypot(enemyBase.x + 0.5 - u.x, enemyBase.y + 0.5 - u.y);
       const baseInRange = baseD <= Math.max(spec.range, 1.5) + 0.8;
 
       let attacked = false;
-      const prefersBuildings = spec.bonusVsBuildings > 1;
       if (baseInRange) {
         attacked = this.tryAttackBase(u, spec, enemySlot);
-      } else if (btarget && (prefersBuildings || !target)) {
-        attacked = this.tryAttackBuilding(u, spec, btarget);
       } else if (target && bestD <= spec.range + 0.2) {
         attacked = this.tryAttackUnit(u, spec, target);
-      } else if (btarget) {
-        attacked = this.tryAttackBuilding(u, spec, btarget);
       }
 
       // 2. Движение, если не в бою (или цель вне досягаемости).
@@ -427,19 +417,6 @@ class Match {
       this.players[u.owner].unitsKilled++;
       this.players[target.owner].unitsLost++;
       this.events.push({ t: 'die', x: target.x, y: target.y, u: target.type, owner: target.owner });
-    }
-    return true;
-  }
-
-  tryAttackBuilding(u, spec, b) {
-    u.dir = Math.atan2(b.cy + 0.5 - u.y, b.cx + 0.5 - u.x);
-    if (u.cd > 0) return true;
-    u.cd = 1 / spec.attackRate;
-    b.hp -= spec.dmg * spec.bonusVsBuildings * this.suddenDeathMult();
-    this.events.push({ t: 'hit', x: b.cx + 0.5, y: b.cy + 0.5 });
-    if (b.hp <= 0) {
-      this.events.push({ t: 'bdie', x: b.cx + 0.5, y: b.cy + 0.5, b: b.type });
-      this.removeBuilding(b);
     }
     return true;
   }

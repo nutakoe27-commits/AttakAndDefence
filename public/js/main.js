@@ -357,7 +357,7 @@ const tooltipEl = $('#tooltip');
 function showTooltip(el, kind, key, spec) {
   const rows = [];
   if (kind === 'unit') {
-    rows.push(`HP ${spec.hp} · Урон ${spec.dmg}${spec.bonusVsBuildings > 1 ? ` (×${spec.bonusVsBuildings} по постройкам)` : ''}`);
+    rows.push(`HP ${spec.hp} · Урон ${spec.dmg}${spec.bonusVsBuildings > 1 ? ` (×${spec.bonusVsBuildings} по базе)` : ''}`);
     rows.push(`Скорость ${spec.speed} · Дальность ${spec.range}${spec.armor ? ` · Броня ${spec.armor}` : ''}`);
     if (spec.healPerSec) rows.push(`Лечение ${spec.healPerSec}/с в радиусе ${spec.healRadius}`);
     rows.push(`Пачка: ${spec.pack} шт.`);

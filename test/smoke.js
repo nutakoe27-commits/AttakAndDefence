@@ -135,10 +135,12 @@ console.log('2б. Доход выплачивается в начале раун
   // Планирование идёт — золота не прибавляется.
   for (let i = 0; i < bal.match.tickRate * 5; i++) m.step();
   check(m.players[0].gold === start, 'во время планирования золото не капает');
-  // Пустой бой -> раунд 2 -> выплата.
+  // Пустой бой -> раунд 2 -> выплата (базовый доход + рост за раунд).
+  const growth = bal.economy.incomeGrowthPerRound || 0;
   m.planLeft = 0.01;
   while (m.round === 1) m.step();
-  check(m.players[0].gold === start + bal.economy.baseIncomePerRound, `в начале раунда 2 выплачен базовый доход (+${bal.economy.baseIncomePerRound})`);
+  const expR2 = bal.economy.baseIncomePerRound + growth;
+  check(m.players[0].gold === start + expR2, `в начале раунда 2 выплачен базовый доход с ростом (+${expR2})`);
   // Шахта увеличивает выплату следующего раунда.
   let placed = false;
   outer2: for (let y = 2; y < m.map.h - 2; y++) for (let x = 2; x < m.map.w / 2; x++) {
@@ -146,28 +148,41 @@ console.log('2б. Доход выплачивается в начале раун
   }
   check(placed, 'шахта построена');
   const mineSpec = bal.buildings.mine;
-  check(m.projectedIncome(0) === bal.economy.baseIncomePerRound + mineSpec.incomePerRound, 'прогноз дохода учитывает шахту');
+  check(m.projectedIncome(0) === expR2 + mineSpec.incomePerRound, 'прогноз дохода учитывает шахту');
   const beforeR3 = m.players[0].gold;
   m.planLeft = 0.01;
   while (m.round === 2) m.step();
-  check(m.players[0].gold === beforeR3 + bal.economy.baseIncomePerRound + mineSpec.incomePerRound, 'выплата раунда 3 включает доход шахты');
+  const expR3 = bal.economy.baseIncomePerRound + growth * 2 + mineSpec.incomePerRound;
+  check(m.players[0].gold === beforeR3 + expR3, 'выплата раунда 3: рост дохода + шахта');
 }
 
-console.log('3. Юниты проходят коридор до вражеской базы');
+console.log('3. Юниты проходят коридор; башни для них неуязвимы');
 {
   const bal = balance.loadDefault();
   const m = new Match('cor', bal, [{ name: 'A' }, { name: 'B' }], 42);
-  m.players[0].gold = 2000;
-  m.spawnUnits(0, 'tank');
-  m.spawnUnits(0, 'tank');
-  m.spawnUnits(0, 'soldier');
+  m.players[0].gold = 5000;
+  m.players[1].gold = 5000;
+  // Вражеская башня прямо у коридора: юниты должны пройти мимо, не тронув её.
+  let towerRef = null;
+  outer3: for (let y = 2; y < m.map.h - 2; y++) for (let x = Math.floor(m.map.w / 2) + 1; x < m.map.w - 2; x++) {
+    if (m.map.tiles[y * m.map.w + x] !== T.ROCK) continue;
+    // клетка горы, смежная с коридором
+    const near = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => {
+      const t = m.map.tiles[(y + dy) * m.map.w + (x + dx)];
+      return t === T.GROUND || t === T.FOREST;
+    });
+    if (near && m.build(1, 'arrow', x, y).ok) { towerRef = m.buildings[m.buildings.length - 1]; break outer3; }
+  }
+  check(!!towerRef, 'вражеская башня построена у коридора');
+  m.spawnUnits(0, 'tank'); m.spawnUnits(0, 'tank'); m.spawnUnits(0, 'tank');
+  m.spawnUnits(0, 'healer');
   m.planLeft = 0.01;
   m.step(); m.step();
   check(m.phase === 'battle' && m.units.length > 0, 'армия вышла в коридор');
-  // Без обороны (кроме турели базы) танки должны дойти и ударить по базе за ~60 сек.
   const hpBefore = m.players[1].baseHp;
-  for (let i = 0; i < bal.match.tickRate * 75 && m.phase === 'battle'; i++) m.step();
-  check(m.players[1].baseHp < hpBefore, `армия прошла извилистый коридор и ударила по базе (HP ${Math.round(hpBefore)} -> ${Math.round(m.players[1].baseHp)})`);
+  for (let i = 0; i < bal.match.tickRate * 90 && m.phase === 'battle'; i++) m.step();
+  check(m.players[1].baseHp < hpBefore, `армия прошла коридор и ударила по базе (HP ${Math.round(hpBefore)} -> ${Math.round(m.players[1].baseHp)})`);
+  check(towerRef.hp === towerRef.hpMax, 'юниты не атаковали башню — она цела');
 }
 
 console.log('4. Бот против бота — полный матч (ускоренно)');

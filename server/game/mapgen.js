@@ -54,6 +54,8 @@ function tryGenerate(rand) {
   const baseA = { x: 3, y: y0 };
   carveRect(1, y0 - 2, 5, y0 + 2); // площадка базы
 
+  // Коридор шириной 2 клетки: горизонтальные полосы rows y..y+1,
+  // вертикальные колена cols x..x+1.
   let x = 5, y = y0;
   let dir = rand() < 0.5 ? 1 : -1;
   let guard = 0;
@@ -61,26 +63,25 @@ function tryGenerate(rand) {
     // горизонтальный прогон
     const run = 3 + Math.floor(rand() * 4);
     const x2 = Math.min(x + run, cxL);
-    carveRect(x, y - 1, x2, y + 1);
+    carveRect(x, y, x2, y + 1);
     x = x2;
     if (x >= cxL) break;
     // вертикальное колено (амплитуда крупная — путь удлиняется)
     const amp = 5 + Math.floor(rand() * 7);
-    let y2 = Math.max(3, Math.min(H - 4, y + dir * amp));
+    let y2 = Math.max(3, Math.min(H - 5, y + dir * amp));
     if (Math.abs(y2 - y) < 4) {
       dir = -dir;
-      y2 = Math.max(3, Math.min(H - 4, y + dir * amp));
+      y2 = Math.max(3, Math.min(H - 5, y + dir * amp));
     }
-    carveRect(x - 1, Math.min(y, y2) - 1, x + 1, Math.max(y, y2) + 1);
+    carveRect(x, Math.min(y, y2), x + 1, Math.max(y, y2) + 1);
     y = y2;
     dir = -dir;
   }
 
   // Центральный вертикальный канал соединяет половины: от (cxL, y)
-  // до зеркальной точки (cxL+1, H-1-y). Тоже под прямым углом.
-  carveRect(cxL - 1, y - 1, cxL, y + 1);
-  const yTop = Math.min(y, H - 1 - y), yBot = Math.max(y, H - 1 - y);
-  for (let yy = yTop - 1; yy <= yBot + 1; yy++) {
+  // до зеркальной точки. Тоже под прямым углом, шириной 2.
+  const yTop = Math.min(y, H - 2 - y), yBot = Math.max(y + 1, H - 1 - y);
+  for (let yy = yTop; yy <= yBot; yy++) {
     carveCell(cxL, yy);
     carveCell(cxL + 1, yy);
   }

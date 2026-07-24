@@ -1,11 +1,16 @@
 {
   "version": 1,
   "economy": {
-    "startGold": 400,
-    "baseIncomePerRound": 250,
+    "startGold": 500,
+    "baseIncomePerRound": 350,
+    "incomeGrowthPerRound": 45,
     "baseHp": 4200,
     "refundRatio": 0.5,
-    "baseTurret": { "dmg": 32, "attackRate": 2.0, "range": 4.4 }
+    "baseTurret": {
+      "dmg": 32,
+      "attackRate": 2.0,
+      "range": 4.4
+    }
   },
   "match": {
     "targetDurationMin": 12,
@@ -15,7 +20,7 @@
     "fatiguePctPerSec": 0.08,
     "suddenDeathAtSec": 630,
     "suddenDeathRampSec": 120,
-    "suddenDeathDecayPerSec": 9,
+    "suddenDeathDecayPerSec": 20,
     "hardLimitSec": 900,
     "tickRate": 8
   },
@@ -78,7 +83,7 @@
     },
     "breaker": {
       "name": "Разрушитель",
-      "desc": "Таран с бонусным уроном по постройкам и базе.",
+      "desc": "Таран с мощным бонусным уроном по вражеской базе.",
       "cost": 280,
       "pack": 2,
       "hp": 180,
@@ -112,18 +117,18 @@
       "name": "Шахта",
       "desc": "Добывает золото каждый раунд. Фундамент вашей экономики.",
       "kind": "economy",
-      "cost": 160,
+      "cost": 140,
       "hp": 320,
-      "incomePerRound": 130,
+      "incomePerRound": 200,
       "hotkey": "q"
     },
     "bank": {
       "name": "Банк",
-      "desc": "+12% ко всему доходу. Эффект складывается.",
+      "desc": "+25% ко всему доходу. Эффект складывается.",
       "kind": "economy",
-      "cost": 380,
+      "cost": 350,
       "hp": 380,
-      "incomeMult": 0.15,
+      "incomeMult": 0.25,
       "maxCount": 5,
       "hotkey": "w"
     },
@@ -169,7 +174,10 @@
     "actionIntervalSec": 2.0,
     "ecoWeightEarly": 0.65,
     "ecoWeightLate": 0.3,
-    "attackIntervalSec": [22, 34],
+    "attackIntervalSec": [
+      22,
+      34
+    ],
     "defendThreshold": 5,
     "aggressionRamp": 1.15,
     "mistakeChance": 0.18
