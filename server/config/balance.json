@@ -1,8 +1,8 @@
 {
   "version": 1,
   "economy": {
-    "startGold": 350,
-    "baseIncomePerRound": 200,
+    "startGold": 400,
+    "baseIncomePerRound": 250,
     "baseHp": 4200,
     "refundRatio": 0.5,
     "baseTurret": { "dmg": 32, "attackRate": 2.0, "range": 4.4 }
@@ -11,7 +11,7 @@
     "targetDurationMin": 12,
     "planPhaseSec": 20,
     "battleMinSec": 3,
-    "battleMaxSec": 60,
+    "battleMaxSec": 90,
     "fatiguePctPerSec": 0.08,
     "suddenDeathAtSec": 630,
     "suddenDeathRampSec": 120,
@@ -114,16 +114,16 @@
       "kind": "economy",
       "cost": 160,
       "hp": 320,
-      "incomePerRound": 70,
+      "incomePerRound": 130,
       "hotkey": "q"
     },
     "bank": {
       "name": "Банк",
       "desc": "+12% ко всему доходу. Эффект складывается.",
       "kind": "economy",
-      "cost": 420,
+      "cost": 380,
       "hp": 380,
-      "incomeMult": 0.12,
+      "incomeMult": 0.15,
       "maxCount": 5,
       "hotkey": "w"
     },

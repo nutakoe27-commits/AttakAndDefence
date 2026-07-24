@@ -34,91 +34,124 @@ function generateMap(seed) {
 
 function tryGenerate(rand) {
   const tiles = new Uint8Array(W * H).fill(T.ROCK);
-  const cx = (W - 1) / 2, cy = (H - 1) / 2;
+  const cxL = W / 2 - 1; // левая из двух центральных колонок (22 при W=46)
 
-  // Змейка из НЕЧЁТНЫХ гармоник вокруг центра карты: sin(-u) = -sin(u),
-  // поэтому y(cx+u) + y(cx-u) = 2*cy — симметрия 180° получается сама собой.
-  // Две гармоники с случайными амплитудами/частотами дают разные S-образные русла.
-  const A1 = 5 + rand() * 3.5;
-  const k1 = (Math.PI * (1.8 + rand() * 1.6)) / W;
-  const s1 = rand() < 0.5 ? -1 : 1;
-  const A2 = 2 + rand() * 3;
-  const k2 = k1 * (2 + rand() * 1.6);
-  const s2 = rand() < 0.5 ? -1 : 1;
-  const pathY = (x) => {
-    const u = x - cx;
-    const y = cy + s1 * A1 * Math.sin(k1 * u) + s2 * A2 * Math.sin(k2 * u);
-    return Math.max(3.2, Math.min(H - 4.2, y));
+  // Карвим клетку и её зеркало (поворот 180°) — симметрия получается сама собой.
+  const carveCell = (x, y) => {
+    if (x < 1 || y < 1 || x >= W - 1 || y >= H - 1) return;
+    tiles[idx(x, y)] = T.GROUND;
+    tiles[idx(W - 1 - x, H - 1 - y)] = T.GROUND;
+  };
+  const carveRect = (x0, y0, x1, y1) => {
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) carveCell(x, y);
   };
 
-  const carve = (px, py, r, to = T.GROUND) => {
-    for (let y = Math.floor(py - r); y <= Math.ceil(py + r); y++) {
-      for (let x = Math.floor(px - r); x <= Math.ceil(px + r); x++) {
-        if (x < 1 || y < 1 || x >= W - 1 || y >= H - 1) continue;
-        const dx = x - px, dy = y - py;
-        if (dx * dx + dy * dy <= r * r) tiles[idx(x, y)] = to;
-      }
+  // Ортогональный зигзаг: горизонтальные прогоны + вертикальные колена
+  // с ОСТРЫМИ углами 90° — никаких диагональных срезов.
+  // Направление колена строго чередуется — путь гуляет вверх-вниз и
+  // получается значительно длиннее прямой линии.
+  const y0 = 4 + Math.floor(rand() * (H - 9));
+  const baseA = { x: 3, y: y0 };
+  carveRect(1, y0 - 2, 5, y0 + 2); // площадка базы
+
+  let x = 5, y = y0;
+  let dir = rand() < 0.5 ? 1 : -1;
+  let guard = 0;
+  while (x < cxL && guard++ < 40) {
+    // горизонтальный прогон
+    const run = 3 + Math.floor(rand() * 4);
+    const x2 = Math.min(x + run, cxL);
+    carveRect(x, y - 1, x2, y + 1);
+    x = x2;
+    if (x >= cxL) break;
+    // вертикальное колено (амплитуда крупная — путь удлиняется)
+    const amp = 5 + Math.floor(rand() * 7);
+    let y2 = Math.max(3, Math.min(H - 4, y + dir * amp));
+    if (Math.abs(y2 - y) < 4) {
+      dir = -dir;
+      y2 = Math.max(3, Math.min(H - 4, y + dir * amp));
     }
-  };
-
-  // Расширения-«арены» в симметричных точках коридора.
-  const bulges = [];
-  const nB = 2 + Math.floor(rand() * 2);
-  for (let i = 0; i < nB; i++) bulges.push({ d: 4 + rand() * (W / 2 - 10), r: 1.1 + rand() * 1.0 });
-  const extraR = (x) => {
-    let e = 0;
-    for (const b of bulges) {
-      const dd = Math.min(Math.abs(x - (cx - b.d)), Math.abs(x - (cx + b.d)));
-      if (dd < 3) e = Math.max(e, b.r * (1 - dd / 3));
-    }
-    return e;
-  };
-
-  // Прорезаем коридор шириной ~3 тайла вдоль змейки.
-  for (let x = 2; x <= W - 3; x += 0.5) {
-    carve(x, pathY(x), 1.45 + extraR(x));
+    carveRect(x - 1, Math.min(y, y2) - 1, x + 1, Math.max(y, y2) + 1);
+    y = y2;
+    dir = -dir;
   }
 
-  // Базы в концах коридора (симметричны автоматически).
-  const bases = [
-    { x: 3, y: Math.round(pathY(3)) },
-    { x: W - 4, y: Math.round(pathY(W - 4)) },
-  ];
-  carve(bases[0].x, bases[0].y, 2.3);
-  carve(bases[1].x, bases[1].y, 2.3);
+  // Центральный вертикальный канал соединяет половины: от (cxL, y)
+  // до зеркальной точки (cxL+1, H-1-y). Тоже под прямым углом.
+  carveRect(cxL - 1, y - 1, cxL, y + 1);
+  const yTop = Math.min(y, H - 1 - y), yBot = Math.max(y, H - 1 - y);
+  for (let yy = yTop - 1; yy <= yBot + 1; yy++) {
+    carveCell(cxL, yy);
+    carveCell(cxL + 1, yy);
+  }
 
-  // Лесные пятна в коридоре — зоны замедления, симметричными парами.
+  const bases = [baseA, { x: W - 4, y: H - 1 - y0 }];
+
+  // Лесные пятна в коридоре — зоны замедления (зеркалятся автоматически).
+  const groundCells = [];
+  for (let yy = 1; yy < H - 1; yy++) for (let xx = 6; xx < cxL; xx++) {
+    if (tiles[idx(xx, yy)] === T.GROUND) groundCells.push([xx, yy]);
+  }
   const nF = 2 + Math.floor(rand() * 3);
-  for (let i = 0; i < nF; i++) {
-    const d = 5 + rand() * (W / 2 - 10);
-    for (const sx of [cx - d, cx + d]) {
-      const py = pathY(sx);
-      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-        const x = Math.round(sx + dx), y = Math.round(py + dy);
-        if (x > 0 && y > 0 && x < W - 1 && y < H - 1 && tiles[idx(x, y)] === T.GROUND && rand() < 0.75) {
-          tiles[idx(x, y)] = T.FOREST;
-        }
+  for (let i = 0; i < nF && groundCells.length; i++) {
+    const [fx, fy] = groundCells[Math.floor(rand() * groundCells.length)];
+    for (let dy = 0; dy <= 1; dy++) for (let dx = 0; dx <= 1; dx++) {
+      const xx = fx + dx, yy = fy + dy;
+      if (xx > 0 && yy > 0 && xx < W - 1 && yy < H - 1 && tiles[idx(xx, yy)] === T.GROUND && rand() < 0.85) {
+        tiles[idx(xx, yy)] = T.FOREST;
+        tiles[idx(W - 1 - xx, H - 1 - yy)] = T.FOREST;
       }
     }
   }
 
-  // Горные озёра (декор, строить на них нельзя) — тоже симметричными парами.
+  // Горные озёра (декор) — прямоугольные, в стиле карты, симметричными парами.
   const nL = 3 + Math.floor(rand() * 3);
   for (let i = 0; i < nL; i++) {
-    const lx = 3 + rand() * (W / 2 - 6), ly = 2 + rand() * (H - 4), lr = 1 + rand() * 1.6;
-    for (const [px, py] of [[lx, ly], [W - 1 - lx, H - 1 - ly]]) {
-      for (let y = Math.floor(py - lr); y <= Math.ceil(py + lr); y++) {
-        for (let x = Math.floor(px - lr); x <= Math.ceil(px + lr); x++) {
-          if (x < 1 || y < 1 || x >= W - 1 || y >= H - 1) continue;
-          const dx = x - px, dy = y - py;
-          if (dx * dx + dy * dy <= lr * lr && tiles[idx(x, y)] === T.ROCK) tiles[idx(x, y)] = T.WATER;
+    const lx = 3 + Math.floor(rand() * (W / 2 - 8));
+    const ly = 2 + Math.floor(rand() * (H - 7));
+    const lw = 1 + Math.floor(rand() * 3), lh = 1 + Math.floor(rand() * 2);
+    for (let yy = ly; yy < ly + lh; yy++) {
+      for (let xx = lx; xx < lx + lw; xx++) {
+        if (xx < 1 || yy < 1 || xx >= W - 1 || yy >= H - 1) continue;
+        if (tiles[idx(xx, yy)] === T.ROCK) {
+          tiles[idx(xx, yy)] = T.WATER;
+          if (tiles[idx(W - 1 - xx, H - 1 - yy)] === T.ROCK) tiles[idx(W - 1 - xx, H - 1 - yy)] = T.WATER;
         }
       }
     }
   }
 
   if (!connected(tiles, bases[0], bases[1])) return null;
+  // Требования извилистости: путь минимум в 1.6 раза длиннее прямой,
+  // и коридор гуляет по вертикали не меньше чем на 10 тайлов.
+  // Слишком «спрямлённые» варианты отбрасываются — генератор пробует новый.
+  const straight = bases[1].x - bases[0].x;
+  if (pathLen(tiles, bases[0], bases[1]) < straight * 1.6) return null;
+  let minY = H, maxY = -1;
+  for (let yy = 0; yy < H; yy++) for (let xx = 0; xx < W; xx++) {
+    if (walkable(tiles[idx(xx, yy)])) { minY = Math.min(minY, yy); maxY = Math.max(maxY, yy); }
+  }
+  if (maxY - minY < 10) return null;
   return { tiles, bases };
+}
+
+// Длина кратчайшего пути по коридору (BFS, 4 направления).
+function pathLen(tiles, a, b) {
+  const dist = new Int32Array(W * H).fill(-1);
+  const queue = [[a.x, a.y]];
+  dist[idx(a.x, a.y)] = 0;
+  let qi = 0;
+  while (qi < queue.length) {
+    const [x, y] = queue[qi++];
+    if (x === b.x && y === b.y) return dist[idx(x, y)];
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+      const ni = idx(nx, ny);
+      if (dist[ni] < 0 && walkable(tiles[ni])) { dist[ni] = dist[idx(x, y)] + 1; queue.push([nx, ny]); }
+    }
+  }
+  return 0;
 }
 
 function walkable(t) { return t === T.GROUND || t === T.FOREST; }

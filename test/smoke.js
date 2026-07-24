@@ -27,7 +27,7 @@ console.log('1. Генерация карт «коридор в горах» (50
       if (t === T.GROUND || t === T.FOREST) { minY = Math.min(minY, y); maxY = Math.max(maxY, y); }
       if (t === T.ROCK) rock++;
     }
-    if (dist < straight * 1.08 || maxY - minY < 9) allWinding = false;
+    if (dist < straight * 1.5 || maxY - minY < 10) allWinding = false;
     if (rock < map.w * map.h * 0.45) rockOk = false;
     // На каждой половине должны быть горные клетки, простреливающие коридор.
     for (const half of [0, 1]) {
