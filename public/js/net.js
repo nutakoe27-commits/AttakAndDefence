@@ -13,9 +13,16 @@ export class Net {
   emit(type, msg) { if (this.handlers[type]) this.handlers[type](msg); }
 
   connect() {
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // Относительный адрес: работает и по IP, и с доменом за nginx.
-    this.ws = new WebSocket(`${proto}//${location.host}/ws`);
+    // Если задан внешний бэкенд (сборка под Яндекс Игры) — идём на него,
+    // иначе на тот же origin (собственный VPS-хостинг).
+    let url;
+    if (typeof window !== 'undefined' && window.AD_BACKEND) {
+      url = window.AD_BACKEND;
+    } else {
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      url = `${proto}//${location.host}/ws`;
+    }
+    this.ws = new WebSocket(url);
     this.ws.onopen = () => {
       this.connected = true;
       this.reconnectDelay = 500;

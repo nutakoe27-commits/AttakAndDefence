@@ -4,6 +4,7 @@ import { GameState } from './game.js';
 import { Renderer, TILE, T } from './render.js';
 import { Tutorial } from './tutorial.js';
 import { OWNER_COLORS, makeIcon } from './sprites.js';
+import { Ya } from './yandex.js';
 
 const $ = (s) => document.querySelector(s);
 
@@ -12,6 +13,23 @@ const gs = new GameState();
 const canvas = $('#game-canvas');
 const renderer = new Renderer(canvas);
 const tutorial = new Tutorial();
+let gamePaused = false; // пауза при сворачивании/рекламе (требования Яндекс 1.3, 4.7)
+
+// Инициализация SDK Яндекса (no-op на своём хостинге) и облачных сохранений.
+(async () => {
+  await Ya.init();
+  try {
+    const prefs = await Ya.loadAll();
+    if (prefs.tutorial_done) localStorage.setItem('ad_tutorial_done', '1');
+    if (prefs.name && !nameInput.value) nameInput.value = String(prefs.name).slice(0, 20);
+  } catch (_) {}
+  Ya.loadingReady();   // сообщаем платформе, что игра готова
+  Ya.showBanner();     // стики-баннер в меню
+  // Пауза геймплея по сигналам платформы и при сворачивании вкладки.
+  Ya.on('pause', () => { gamePaused = true; });
+  Ya.on('resume', () => { gamePaused = false; });
+  document.addEventListener('visibilitychange', () => { gamePaused = document.hidden; });
+})();
 
 // ---------- Экраны ----------
 function showScreen(id) {
@@ -37,6 +55,7 @@ nameInput.value = localStorage.getItem('ad_name') || '';
 $('#btn-play').addEventListener('click', () => {
   const name = nameInput.value.trim() || 'Полководец';
   localStorage.setItem('ad_name', name);
+  Ya.save({ name });
   if (!net.connected) { toast('Нет соединения с сервером', 'err'); return; }
   net.send({ t: 'queue', name });
 });
@@ -214,6 +233,8 @@ net.on('matchStart', (data) => {
   $('#hud-my-name').textContent = data.players[data.yourSlot].name + ' (вы)';
   $('#hud-enemy-name').textContent = enemyMeta.name;
   endShown = false;
+  Ya.hideBanner();     // прячем баннер во время боя
+  Ya.gameplayStart();  // активный геймплей — для корректной паузы рекламы
   if (tutorial.shouldShow()) setTimeout(() => tutorial.start(), 600);
 });
 
@@ -783,6 +804,7 @@ function maybeShowEnd() {
   if (!gs.over || endShown) return;
   endShown = true;
   stopPlacing();
+  Ya.gameplayStop(); // матч окончен — снимаем разметку геймплея
   setTimeout(() => {
     const meWon = gs.winner === gs.mySlot;
     const draw = gs.winner === null || gs.winner === undefined;
@@ -810,9 +832,12 @@ function maybeShowEnd() {
   }, 1400);
 }
 
-$('#btn-back-menu').addEventListener('click', () => {
+$('#btn-back-menu').addEventListener('click', async () => {
   net.send({ t: 'leaveMatch' });
+  // Реклама в логической паузе (между матчами), затем возврат в меню.
+  await Ya.showInterstitial();
   showScreen('#screen-menu');
+  Ya.showBanner();
 });
 
 // ---------- Игровой цикл ----------
@@ -820,6 +845,8 @@ let lastFrame = performance.now();
 function frame(now) {
   const dt = Math.min(0.1, (now - lastFrame) / 1000);
   lastFrame = now;
+  // Пауза при сворачивании/рекламе: не рендерим (экономим CPU; звук бы заглушался).
+  if (gamePaused) { requestAnimationFrame(frame); return; }
   if ($('#screen-game').classList.contains('active') || $('#screen-end').classList.contains('active')) {
     // Стрелки — панорама.
     const pan = 520 * dt / renderer.cam.zoom;

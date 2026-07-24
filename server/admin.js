@@ -2,6 +2,7 @@
 // API админ-панели: авторизация по паролю, статистика, live-матчи, редактор баланса.
 const crypto = require('crypto');
 const balance = require('./balance');
+const db = require('./db');
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin';
 if (!process.env.ADMIN_PASSWORD) {
@@ -104,6 +105,18 @@ async function handle(req, res, lobby, onlineCount) {
         active: [...lobby.matches.values()].filter(r => !r.match.over).map(r => r.adminSummary()),
         history: lobby.history.slice(0, 30),
       }), true;
+    }
+
+    if (path === '/api/admin/stats' && req.method === 'GET') {
+      const days = parseInt(url.searchParams.get('days') || '0', 10) || 0;
+      const bal = balance.get();
+      const a = db.analytics(days, Object.keys(bal.units), Object.keys(bal.buildings));
+      // Добавим человекочитаемые имена из баланса.
+      if (a.enabled) {
+        for (const u of a.units) u.name = bal.units[u.key] ? bal.units[u.key].name : u.key;
+        for (const b of a.buildings) b.name = bal.buildings[b.key] ? bal.buildings[b.key].name : b.key;
+      }
+      return json(res, 200, { ok: true, stats: a }), true;
     }
 
     if (path === '/api/admin/balance' && req.method === 'GET') {

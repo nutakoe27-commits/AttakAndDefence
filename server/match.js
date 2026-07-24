@@ -4,6 +4,7 @@
 const { Match } = require('./game/sim');
 const { Bot } = require('./game/bot');
 const balance = require('./balance');
+const db = require('./db');
 const crypto = require('crypto');
 
 const BOT_NAMES = ['Генерал Оникс', 'Командор Вега', 'Маршал Гром', 'Стратег Ирбис', 'Полковник Шторм'];
@@ -194,6 +195,7 @@ class Lobby {
 
   startMatch(players, kind) {
     const runner = new MatchRunner(players, r => this.onMatchFinish(r));
+    runner.match.kind = kind;
     this.matches.set(runner.id, runner);
     for (let slot = 0; slot < players.length; slot++) {
       if (players[slot].token) this.byToken.set(players[slot].token, { runner, slot });
@@ -255,6 +257,8 @@ class Lobby {
 
   onMatchFinish(runner) {
     const m = runner.match;
+    // Запись в БД для аналитики баланса.
+    try { db.recordMatch(m.statsSummary()); } catch (e) { console.error('[match] db.recordMatch:', e.message); }
     this.history.unshift({
       id: runner.id,
       finishedAt: Date.now(),

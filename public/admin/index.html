@@ -28,6 +28,7 @@
     <nav>
       <button class="nav-btn active" data-page="dashboard">📊 Дашборд</button>
       <button class="nav-btn" data-page="matches">⚔ Матчи</button>
+      <button class="nav-btn" data-page="analytics">📈 Аналитика</button>
       <button class="nav-btn" data-page="balance">⚖ Баланс</button>
       <button class="nav-btn" data-page="settings">⚙ Матчмейкинг и бот</button>
     </nav>
@@ -58,6 +59,25 @@
       <div class="panel">
         <h3>История (последние 30)</h3>
         <div class="table-wrap"><table id="history-matches"></table></div>
+      </div>
+    </section>
+
+    <!-- Аналитика -->
+    <section id="page-analytics" class="page">
+      <div class="page-head">
+        <h2>Аналитика баланса</h2>
+        <div class="head-actions">
+          <select id="stats-range">
+            <option value="0">За всё время</option>
+            <option value="1">За сутки</option>
+            <option value="7">За неделю</option>
+            <option value="30">За месяц</option>
+          </select>
+          <button id="btn-stats-refresh" class="btn">Обновить</button>
+        </div>
+      </div>
+      <div id="stats-body">
+        <div class="note">Загрузка…</div>
       </div>
     </section>
 

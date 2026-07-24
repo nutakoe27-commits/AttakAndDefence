@@ -37,6 +37,13 @@ class Match {
       unitsSpawned: 0,
       unitsLost: 0,
       unitsKilled: 0,
+      // Разбивка по типам для аналитики баланса.
+      unitsByType: {},      // сколько выпущено на поле каждого типа
+      lossesByType: {},     // сколько потеряно каждого типа
+      buildingsByType: {},  // сколько построено каждого типа
+      goldOnUnits: 0,       // потрачено золота на юнитов
+      goldOnEco: 0,         // на экономику
+      goldOnDefense: 0,     // на оборону
     }));
 
     this.units = [];      // {id, owner, type, x, y, hp, hpMax, slowUntil, cd, dir}
@@ -68,6 +75,7 @@ class Match {
     if (this.queued[slot].length + spec.pack > UNIT_CAP) return { ok: false, error: 'Достигнут лимит армии' };
     p.gold -= spec.cost;
     p.goldSpent += spec.cost;
+    p.goldOnUnits += spec.cost;
     for (let i = 0; i < spec.pack; i++) this.queued[slot].push(type);
     return { ok: true };
   }
@@ -87,6 +95,7 @@ class Match {
     const refund = Math.round(spec.cost * (removed / spec.pack));
     this.players[slot].gold += refund;
     this.players[slot].goldSpent -= refund;
+    this.players[slot].goldOnUnits -= refund;
     return { ok: true };
   }
 
@@ -101,6 +110,8 @@ class Match {
     if (err) return { ok: false, error: err };
     p.gold -= spec.cost;
     p.goldSpent += spec.cost;
+    p.buildingsByType[type] = (p.buildingsByType[type] || 0) + 1;
+    if (spec.kind === 'economy') p.goldOnEco += spec.cost; else p.goldOnDefense += spec.cost;
     const b = {
       id: nextEntityId++, owner: slot, type, cx, cy,
       hp: spec.hp, hpMax: spec.hp, cd: 0, bornRound: this.round,
@@ -237,6 +248,7 @@ class Match {
           slowUntil: 0, cd: 0, dir: slot === 0 ? 0 : Math.PI,
         });
         this.players[slot].unitsSpawned++;
+        this.players[slot].unitsByType[type] = (this.players[slot].unitsByType[type] || 0) + 1;
       }
       if (q.length) this.events.push({ t: 'spawn', x: base.x + 0.5, y: base.y + 0.5, owner: slot });
       this.queued[slot] = [];
@@ -263,7 +275,7 @@ class Match {
     for (const u of this.units) {
       u.hp -= u.hpMax * pct * this.dt;
       if (u.hp <= 0) {
-        this.players[u.owner].unitsLost++;
+        this.noteLoss(u);
         this.events.push({ t: 'die', x: u.x, y: u.y, u: u.type, owner: u.owner });
       }
     }
@@ -420,7 +432,7 @@ class Match {
     if (spec.range > 2) this.events.push({ t: 'proj', x1: u.x, y1: u.y, x2: target.x, y2: target.y, k: 'arrow' });
     if (target.hp <= 0) {
       this.players[u.owner].unitsKilled++;
-      this.players[target.owner].unitsLost++;
+      this.noteLoss(target);
       this.events.push({ t: 'die', x: target.x, y: target.y, u: target.type, owner: target.owner });
     }
     return true;
@@ -564,15 +576,42 @@ class Match {
     u.hp -= Math.max(1, dmg - (spec.armor || 0));
     if (u.hp <= 0) {
       this.players[bySlot].unitsKilled++;
-      this.players[u.owner].unitsLost++;
+      this.noteLoss(u);
       this.events.push({ t: 'die', x: u.x, y: u.y, u: u.type, owner: u.owner });
     }
+  }
+
+  noteLoss(u) {
+    const p = this.players[u.owner];
+    p.unitsLost++;
+    p.lossesByType[u.type] = (p.lossesByType[u.type] || 0) + 1;
   }
 
   reapDead() {
     for (let i = this.units.length - 1; i >= 0; i--) {
       if (this.units[i].hp <= 0) this.units.splice(i, 1);
     }
+  }
+
+  // Полная статистика матча для записи в БД.
+  statsSummary() {
+    return {
+      id: this.id,
+      kind: this.kind || 'pvp',
+      durationSec: Math.round(this.time),
+      rounds: this.round,
+      winner: this.winner == null ? -1 : this.winner,
+      reason: this.endReason,
+      seed: this.map.seed,
+      balanceVersion: this.balance.version || 0,
+      players: this.players.map(p => ({
+        slot: p.slot, isBot: p.isBot, won: this.winner === p.slot ? 1 : 0,
+        kills: p.unitsKilled, losses: p.unitsLost,
+        goldEarned: p.goldEarned, goldSpent: p.goldSpent, baseHp: Math.round(p.baseHp),
+        goldOnUnits: p.goldOnUnits, goldOnEco: p.goldOnEco, goldOnDefense: p.goldOnDefense,
+        unitsByType: p.unitsByType, lossesByType: p.lossesByType, buildingsByType: p.buildingsByType,
+      })),
+    };
   }
 
   checkEnd() {

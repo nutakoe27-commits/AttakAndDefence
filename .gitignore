@@ -3,3 +3,5 @@ server/config/balance.custom.json
 server/config/admin.settings.json
 *.log
 .env
+server/data/
+dist-yandex/

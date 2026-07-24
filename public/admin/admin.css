@@ -106,6 +106,14 @@ tr:hover td { background: rgba(255,255,255,.02); }
 .bal-table .row-name { font-weight: 700; color: var(--text); }
 .bal-table .spec-desc { color: var(--muted); font-size: 12px; max-width: 260px; }
 
+/* Аналитика */
+.mini-bar { display: inline-block; width: 80px; height: 7px; border-radius: 4px; background: #0a0e14; overflow: hidden; vertical-align: middle; margin-left: 6px; }
+.mini-bar i { display: block; height: 100%; }
+.side-balance { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 14px; }
+.side-balance .mini-bar { width: 160px; height: 10px; }
+.hint2 { font-size: 11px; color: var(--muted); font-weight: 400; }
+#stats-range { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 7px 12px; font-size: 13px; }
+
 #admin-toast-wrap { position: fixed; right: 20px; bottom: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 99; }
 .admin-toast {
   background: var(--panel2); border: 1px solid var(--border); border-left: 4px solid var(--green);

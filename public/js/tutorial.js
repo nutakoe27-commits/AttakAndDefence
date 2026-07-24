@@ -1,4 +1,5 @@
 // Обучение: пошаговый оверлей при первом матче.
+import { Ya } from './yandex.js';
 const IS_TOUCH = window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
 const STEPS = [
   {
@@ -96,5 +97,6 @@ export class Tutorial {
     this.box.style.transform = '';
     this.overlay.classList.add('hidden');
     localStorage.setItem('ad_tutorial_done', '1');
+    Ya.save({ tutorial_done: '1' }); // облачное сохранение прогресса
   }
 }

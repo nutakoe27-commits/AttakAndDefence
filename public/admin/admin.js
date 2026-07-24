@@ -75,8 +75,89 @@
       currentPage = btn.dataset.page;
       $('#page-' + currentPage).classList.add('active');
       if (currentPage === 'matches') refreshMatches();
+      if (currentPage === 'analytics') loadStats();
     });
   });
+
+  // ---------- Аналитика ----------
+  function bar(pct, color) {
+    const w = Math.max(0, Math.min(100, pct));
+    return `<div class="mini-bar"><i style="width:${w}%;background:${color || 'var(--accent)'}"></i></div>`;
+  }
+  function winColor(wr) { return wr >= 55 ? 'var(--green)' : wr <= 45 ? 'var(--red)' : '#c9a13a'; }
+
+  async function loadStats() {
+    const days = $('#stats-range').value;
+    let r;
+    try { r = await api('stats?days=' + days); } catch { return; }
+    const s = r.stats;
+    const body = $('#stats-body');
+    if (!s || !s.enabled) {
+      body.innerHTML = '<div class="note">Статистика недоступна: на сервере нет node:sqlite (нужен Node 22.5+) или ещё не сыграно ни одного матча. Данные появятся после первых завершённых матчей.</div>';
+      return;
+    }
+    const t = s.totals;
+    const sb = s.sideBalance, sbTotal = (sb.slot0 + sb.slot1) || 1;
+    const ec = s.economy;
+    const unitRows = s.units.sort((a, b) => b.spawned - a.spawned).map(u => `
+      <tr>
+        <td class="row-name">${esc(u.name)}</td>
+        <td>${u.spawned}</td>
+        <td>${u.pickRate}% ${bar(u.pickRate)}</td>
+        <td>${u.survival}%</td>
+        <td style="color:${winColor(u.winRate)}">${u.winRate}% ${bar(u.winRate, winColor(u.winRate))}</td>
+      </tr>`).join('');
+    const buildRows = s.buildings.sort((a, b) => b.built - a.built).map(b => `
+      <tr>
+        <td class="row-name">${esc(b.name)}</td>
+        <td>${b.built}</td>
+        <td>${b.avgPerPlayer}</td>
+        <td>${b.pickRate}% ${bar(b.pickRate)}</td>
+        <td style="color:${winColor(b.winRate)}">${b.winRate}% ${bar(b.winRate, winColor(b.winRate))}</td>
+      </tr>`).join('');
+    const reasons = s.reasons.map(r => `${esc(r.reason || '—')}: ${r.n}`).join(' · ');
+    body.innerHTML = `
+      <div class="cards">
+        ${card('Матчей (' + s.window + ')', t.matches)}
+        ${card('Средняя длит.', fmtDur(t.avgDurationSec))}
+        ${card('Раундов в среднем', t.avgRounds)}
+        ${card('Ничьих', t.draws)}
+      </div>
+      <div class="panel">
+        <h3>Баланс сторон</h3>
+        <div class="side-balance">
+          <span>Левая база: <b>${sb.slot0}</b> (${Math.round(sb.slot0 / sbTotal * 100)}%)</span>
+          ${bar(Math.round(sb.slot0 / sbTotal * 100), '#4da3ff')}
+          <span>Правая база: <b>${sb.slot1}</b> (${Math.round(sb.slot1 / sbTotal * 100)}%)</span>
+        </div>
+        <div class="note" style="margin-top:10px">Здоровый баланс — около 50/50. Сильный перекос означает преимущество стороны (проверьте генерацию карты/старт). Причины концовок: ${reasons}</div>
+      </div>
+      <div class="panel">
+        <h3>Юниты <span class="hint2">(pick — доля игроков, взявших юнита; win — их winrate; survival — доля выживших)</span></h3>
+        <div class="table-wrap"><table>
+          <tr><th>Юнит</th><th>Выпущено</th><th>Pick rate</th><th>Выживаемость</th><th>Win rate</th></tr>
+          ${unitRows || '<tr><td colspan=5 style="color:var(--muted)">нет данных</td></tr>'}
+        </table></div>
+      </div>
+      <div class="panel">
+        <h3>Постройки</h3>
+        <div class="table-wrap"><table>
+          <tr><th>Постройка</th><th>Построено</th><th>В среднем/игрок</th><th>Pick rate</th><th>Win rate</th></tr>
+          ${buildRows || '<tr><td colspan=5 style="color:var(--muted)">нет данных</td></tr>'}
+        </table></div>
+      </div>
+      <div class="panel">
+        <h3>Экономика (в среднем за матч на игрока)</h3>
+        <div class="cards">
+          ${card('Заработано', ec.avgEarned)}
+          ${card('На юнитов', ec.avgOnUnits)}
+          ${card('На экономику', ec.avgOnEco)}
+          ${card('На оборону', ec.avgOnDefense)}
+        </div>
+      </div>`;
+  }
+  $('#btn-stats-refresh').addEventListener('click', loadStats);
+  $('#stats-range').addEventListener('change', loadStats);
 
   // ---------- Дашборд ----------
   function card(label, value, sub = '') {

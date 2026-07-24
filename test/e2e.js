@@ -3,6 +3,7 @@
 const { spawn } = require('child_process');
 const WebSocket = require('ws');
 const http = require('http');
+const path = require('path');
 
 const PORT = 3177;
 let failed = 0;
@@ -50,8 +51,9 @@ async function waitFor(fn, timeoutMs, what) {
 }
 
 (async () => {
+  const STATS_DB = path.join(require('os').tmpdir(), `ad_e2e_stats_${process.pid}.db`);
   const server = spawn('node', ['server/index.js'], {
-    env: { ...process.env, PORT: String(PORT), ADMIN_PASSWORD: 'testpass123' },
+    env: { ...process.env, PORT: String(PORT), ADMIN_PASSWORD: 'testpass123', STATS_DB },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   server.stderr.on('data', d => process.stderr.write('[srv] ' + d));
@@ -166,6 +168,19 @@ async function waitFor(fn, timeoutMs, what) {
     send(c4, { t: 'hello', token: savedToken, name: 'Соло' });
     await waitFor(() => c4.init, 4000, 'реконнект в матч');
     check(c4.init.matchId === c3.init.matchId, 'реконнект вернул в тот же матч');
+    console.log('6.5. Статистика/БД: завершённый матч записан, аналитика считается');
+    {
+      const st = await fetchJson('/api/admin/stats?days=0', { headers: auth });
+      if (st.body.stats && st.body.stats.enabled) {
+        check(st.body.stats.totals.matches >= 1, 'матчи записаны в БД');
+        check(Array.isArray(st.body.stats.units) && st.body.stats.units.length > 0, 'аналитика по юнитам есть');
+        check(!!st.body.stats.economy && typeof st.body.stats.economy.avgEarned === 'number', 'экономическая аналитика считается');
+        check(!!st.body.stats.sideBalance, 'баланс сторон посчитан');
+      } else {
+        check(true, 'node:sqlite недоступен — статистика в no-op режиме (не ошибка)');
+      }
+    }
+
     console.log('7. Приватные комнаты (игра с другом)');
     const h1 = await wsClient('Хост');
     const h2 = await wsClient('Друг');

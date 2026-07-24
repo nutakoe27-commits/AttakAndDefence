@@ -6,7 +6,7 @@
 <title>Attack &amp; Defence — PvP Tower Defense</title>
 <meta name="description" content="Attack & Defence — браузерная PvP стратегия: стройте оборону, развивайте экономику и уничтожьте вражескую базу.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚔️</text></svg>">
-<link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="./css/style.css">
 </head>
 <body>
 
@@ -186,6 +186,17 @@
   </div>
 </div>
 
-<script type="module" src="/js/main.js"></script>
+<!--
+  Конфиг бэкенда. На собственном VPS клиент раздаётся тем же сервером, поэтому
+  AD_BACKEND не задан и WebSocket идёт на тот же origin. Для сборки под Яндекс Игры
+  build-скрипт подставит сюда адрес вашего WSS-бэкенда (см. YANDEX.md).
+-->
+<script>window.AD_BACKEND = window.AD_BACKEND || null;</script>
+<!--
+  SDK Яндекс Игр. Грузится только на площадке Яндекса; при своём хостинге запрос
+  может не пройти — это нормально, обёртка (js/yandex.js) молча работает без него.
+-->
+<script src="https://yandex.ru/games/sdk/v2" onerror="window.__yaSdkFailed=true"></script>
+<script type="module" src="./js/main.js"></script>
 </body>
 </html>
