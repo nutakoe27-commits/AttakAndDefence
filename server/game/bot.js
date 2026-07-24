@@ -123,27 +123,47 @@ class Bot {
     }
     this.plannedRound = m.round;
     this.waveDone = false;
-    this.reserve = me.gold * (0.4 + Math.random() * 0.15);
+    // Резерв под армию растёт с раундами: ранний бот вкладывается в экономику
+    // (шахты окупаются меньше чем за раунд), поздний — фондирует крупные волны.
+    const investPhase = Math.min(1, (m.round - 1) / 7);
+    this.reserve = me.gold * (0.18 + investPhase * 0.4);
   }
+
+  // Сколько шахт хотим к этому раунду (растёт, но с потолком).
+  desiredMines() { return Math.min(9, 2 + this.match.round); }
 
   think() {
     const m = this.match;
+    const mines = this.myBuildings('mine').length;
+    const banks = this.myBuildings('bank').length;
+    const bankSpec = m.balance.buildings.bank;
+    const defTowers = this.myBuildings().filter(b => m.balance.buildings[b.type].kind === 'defense').length;
 
-    // 1. Нас бьют — усиливаем оборону в первую очередь.
+    // 1. Экономическая база — высший приоритет, пока шахт меньше цели.
+    // Экономика окупается быстро, поэтому даже слегка залезаем в резерв.
+    if (mines < this.desiredMines() && this.me().gold >= m.balance.buildings.mine.cost * 1.1) {
+      if (this.placeEco('mine')) return;
+    }
+
+    // 2. Нас бьют — усиливаем оборону.
     const pressured = this.intel.hpLostLastBattle > 0 || this.intel.incursion >= this.cfg.defendThreshold;
     if (pressured && Math.random() < 0.7) {
       this.intel.incursion = Math.max(0, this.intel.incursion - 3);
       if (this.growDefense()) return;
     }
 
-    // 2. Ранний приоритет: первая башня.
-    const defTowers = this.myBuildings().filter(b => m.balance.buildings[b.type].kind === 'defense').length;
+    // 3. Ранняя первая башня.
     if (m.round <= 3 && defTowers === 0 && this.canSpend(m.balance.buildings.arrow.cost)) {
       this.placeTower('arrow');
       return;
     }
 
-    // 3. Экономика или оборона по фазе игры.
+    // 4. Банк, когда экономика уже развёрнута — множитель окупается на большом доходе.
+    if (mines >= 3 && banks < (bankSpec.maxCount || 5) && this.canSpend(bankSpec.cost) && Math.random() < 0.5) {
+      if (this.placeEco('bank')) return;
+    }
+
+    // 5. Экономика или оборона по фазе игры.
     const phase = Math.min(1, m.time / 300);
     const ecoWeight = this.cfg.ecoWeightEarly * (1 - phase) + this.cfg.ecoWeightLate * phase;
     if (Math.random() < ecoWeight) this.growEconomy();
@@ -155,7 +175,7 @@ class Bot {
     const mines = this.myBuildings('mine').length;
     const banks = this.myBuildings('bank').length;
     const bankSpec = m.balance.buildings.bank;
-    if (mines >= 4 && banks < (bankSpec.maxCount || 5) && this.canSpend(bankSpec.cost)) {
+    if (mines >= 3 && banks < (bankSpec.maxCount || 5) && this.canSpend(bankSpec.cost)) {
       this.placeEco('bank');
       return;
     }

@@ -390,16 +390,21 @@ class Match {
       u.cd = 1;
       this.events.push({ t: 'heal', x: patient.x, y: patient.y });
     }
-    // Держится за ближайшим союзником впереди, иначе идёт по потоку.
-    let buddy = null, bd = Infinity;
+    // Целитель ВСЕГДА идёт по коридору к базе врага (как все), но держится
+    // чуть позади передовой линии, чтобы не выбегать вперёд и не гибнуть.
+    const flow = this.flowFor(u.owner);
+    const w = this.map.w;
+    const myFlow = flow[Math.floor(u.y) * w + Math.floor(u.x)];
+    let frontFlow = Infinity, anyAlly = false;
     for (const a of this.units) {
-      if (a.owner !== u.owner || a === u || this.balance.units[a.type].healPerSec) continue;
-      const d = Math.hypot(a.x - u.x, a.y - u.y);
-      if (d < bd) { bd = d; buddy = a; }
+      if (a.owner !== u.owner || a === u) continue;
+      if (this.balance.units[a.type].healPerSec) continue; // не равняемся на других целителей
+      anyAlly = true;
+      const af = flow[Math.floor(a.y) * w + Math.floor(a.x)];
+      if (af < frontFlow) frontFlow = af;
     }
-    if (buddy && bd > 1.6) {
-      this.moveToward(u, spec, buddy.x, buddy.y);
-    } else if (!buddy) {
+    // Нет боевых союзников — идём сами; есть — двигаемся, только если отстали.
+    if (!anyAlly || myFlow > frontFlow + 1.0) {
       this.moveUnit(u, spec, null);
     }
   }
@@ -455,6 +460,11 @@ class Match {
     this.moveToward(u, spec, best[0] + 0.5, best[1] + 0.5);
   }
 
+  walkableAt(x, y) {
+    const fx = Math.floor(x), fy = Math.floor(y);
+    return this.inBounds(fx, fy) && walkable(this.map.tiles[this.gi(fx, fy)]);
+  }
+
   moveToward(u, spec, tx, ty) {
     const dx = tx - u.x, dy = ty - u.y;
     const d = Math.hypot(dx, dy);
@@ -464,22 +474,47 @@ class Match {
     if (tile === T.FOREST) speed *= FOREST_SPEED;
     if (this.time < u.slowUntil) speed *= (1 - u.slowFactor);
     const step = Math.min(d, speed * this.dt);
-    let nx = u.x + (dx / d) * step;
-    let ny = u.y + (dy / d) * step;
-    // Не заходим в непроходимые тайлы.
-    if (this.inBounds(Math.floor(nx), Math.floor(u.y)) && walkable(this.map.tiles[this.gi(Math.floor(nx), Math.floor(u.y))])) u.x = nx;
-    if (this.inBounds(Math.floor(u.x), Math.floor(ny)) && walkable(this.map.tiles[this.gi(Math.floor(u.x), Math.floor(ny))])) u.y = ny;
+    const nx = u.x + (dx / d) * step;
+    const ny = u.y + (dy / d) * step;
+    // Пошагово по осям, не заходя в непроходимые тайлы.
+    if (this.walkableAt(nx, u.y)) u.x = nx;
+    if (this.walkableAt(u.x, ny)) u.y = ny;
     u.dir = Math.atan2(dy, dx);
-    // Лёгкое расталкивание, чтобы юниты не сливались в точку.
+
+    // Расталкивание — только в проходимые клетки (иначе в узком коридоре
+    // юниты впихивали друг друга в скалы и застревали).
     for (const o of this.units) {
       if (o === u || o.hp <= 0) continue;
       const ox = u.x - o.x, oy = u.y - o.y;
       const od = Math.hypot(ox, oy);
       if (od > 0.001 && od < 0.55) {
-        u.x += (ox / od) * 0.03;
-        u.y += (oy / od) * 0.03;
+        const px = u.x + (ox / od) * 0.03;
+        const py = u.y + (oy / od) * 0.03;
+        if (this.walkableAt(px, u.y)) u.x = px;
+        if (this.walkableAt(u.x, py)) u.y = py;
       }
     }
+    this.keepOnPath(u);
+  }
+
+  // Страховка: если юнита всё же вытолкнуло в скалу — тянем к центру
+  // ближайшей проходимой клетки, чтобы он не застревал в текстуре.
+  keepOnPath(u) {
+    if (this.walkableAt(u.x, u.y)) return;
+    const cx = Math.floor(u.x), cy = Math.floor(u.y);
+    let best = null, bestD = Infinity;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const nx = cx + dx, ny = cy + dy;
+      if (!this.inBounds(nx, ny) || !walkable(this.map.tiles[this.gi(nx, ny)])) continue;
+      const tx = nx + 0.5, ty = ny + 0.5;
+      const dd = (tx - u.x) ** 2 + (ty - u.y) ** 2;
+      if (dd < bestD) { bestD = dd; best = [tx, ty]; }
+    }
+    if (!best) return;
+    const dx = best[0] - u.x, dy = best[1] - u.y;
+    const d = Math.hypot(dx, dy) || 1;
+    u.x += (dx / d) * 0.25;
+    u.y += (dy / d) * 0.25;
   }
 
   updateBuildings() {

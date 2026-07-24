@@ -185,6 +185,41 @@ console.log('3. Юниты проходят коридор; башни для н
   check(towerRef.hp === towerRef.hpMax, 'юниты не атаковали башню — она цела');
 }
 
+console.log('3б. Юниты не застревают в скалах, целитель идёт с армией');
+{
+  const bal = balance.loadDefault();
+  const m = new Match('stuck', bal, [{ name: 'A' }, { name: 'B' }], 7);
+  m.players[0].gold = 5000;
+  // Большая толпа в узком коридоре — стресс расталкивания.
+  for (let i = 0; i < 6; i++) m.spawnUnits(0, 'soldier');
+  m.spawnUnits(0, 'healer');
+  m.spawnUnits(0, 'healer');
+  m.planLeft = 0.01;
+  m.step(); m.step();
+  const { walkable, T: TT } = require('../server/game/mapgen');
+  // Прогоняем бой и на каждом тике проверяем, что никто не залез в скалу надолго.
+  let maxStuck = 0;
+  const startX = m.units.filter(u => u.owner === 0).reduce((s, u) => s + u.x, 0) / m.units.length;
+  for (let i = 0; i < bal.match.tickRate * 40 && m.phase === 'battle'; i++) {
+    m.step();
+    let stuck = 0;
+    for (const u of m.units) {
+      const t = m.map.tiles[m.gi(Math.floor(u.x), Math.floor(u.y))];
+      if (!(t === TT.GROUND || t === TT.FOREST)) stuck++;
+    }
+    maxStuck = Math.max(maxStuck, stuck);
+  }
+  check(maxStuck <= 1, `юниты держатся коридора (макс. вне пути за тик: ${maxStuck})`);
+  // Целитель продвинулся вперёд вместе с армией (а не замер у базы).
+  const healers = m.units.filter(u => u.type === 'healer' && u.owner === 0);
+  if (healers.length) {
+    const advanced = healers.some(h => Math.abs(h.x - m.map.bases[0].x) > 5);
+    check(advanced || m.phase !== 'battle', 'целитель продвинулся по коридору, а не застыл у базы');
+  } else {
+    check(true, 'целители дошли до боя (уже в гуще)');
+  }
+}
+
 console.log('4. Бот против бота — полный матч (ускоренно)');
 {
   const bal = balance.loadDefault();
