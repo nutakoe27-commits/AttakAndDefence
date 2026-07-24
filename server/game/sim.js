@@ -5,7 +5,6 @@ const { generateMap, T, walkable } = require('./mapgen');
 
 const UNIT_CAP = 70;          // максимум юнитов на игрока
 const FOREST_SPEED = 0.55;    // множитель скорости в лесу
-const SIEGE_COST = 26;        // «стоимость» прохода сквозь вражескую постройку для поиска пути
 const FOREST_COST = 2;
 
 let nextEntityId = 1;
@@ -127,13 +126,11 @@ class Match {
 
   placementError(slot, type, cx, cy) {
     if (!this.inBounds(cx, cy)) return 'Вне карты';
-    if (this.map.tiles[this.gi(cx, cy)] !== T.GROUND) return 'Строить можно только на земле';
+    if (this.map.tiles[this.gi(cx, cy)] !== T.ROCK) return 'Строить можно только на горах';
     if (this.buildGrid[this.gi(cx, cy)] >= 0) return 'Клетка занята';
     const half = this.map.w / 2;
     if (slot === 0 && cx >= half) return 'Строить можно только на своей половине';
     if (slot === 1 && cx < half) return 'Строить можно только на своей половине';
-    const base = this.map.bases[slot];
-    if (cx === base.x && cy === base.y) return 'Здесь стоит база';
     const spec = this.balance.buildings[type];
     if (spec.maxCount) {
       const count = this.buildings.filter(b => b.owner === slot && b.type === type).length;
@@ -150,20 +147,13 @@ class Match {
   }
 
   // ---------- Поиск пути (поле направлений, Дейкстра от вражеской базы) ----------
-  // Вражеские постройки проходимы, но с большой ценой: юниты сами «прогрызают» путь.
+  // Постройки стоят на горах и на пути не влияют: юниты ходят только по коридору.
   computeFlow(slot) {
     const { w, h, tiles } = this.map;
     const enemy = 1 - slot;
     const target = this.map.bases[enemy];
     const dist = new Float32Array(w * h).fill(Infinity);
-    const ownerOfCell = new Int8Array(w * h).fill(-1);
-    const barricadeCell = new Uint8Array(w * h);
-    for (const b of this.buildings) {
-      ownerOfCell[this.gi(b.cx, b.cy)] = b.owner;
-      if (b.type === 'barricade') barricadeCell[this.gi(b.cx, b.cy)] = 1;
-    }
 
-    // Двоичная куча не нужна: цены малы, подойдёт bucket-подобная очередь.
     const start = this.gi(target.x, target.y);
     dist[start] = 0;
     const queue = [[0, start]];
@@ -180,10 +170,7 @@ class Match {
         const ni = ny * w + nx;
         const t = tiles[ni];
         if (!walkable(t)) continue;
-        let cost = t === T.FOREST ? FOREST_COST : 1;
-        if (barricadeCell[ni]) cost = SIEGE_COST;              // баррикада не пускает НИКОГО — обход или слом
-        else if (ownerOfCell[ni] === enemy) cost = SIEGE_COST; // вражескую постройку придётся ломать
-        else if (ownerOfCell[ni] === slot) cost = 6;           // сквозь свою башню можно протиснуться
+        const cost = t === T.FOREST ? FOREST_COST : 1;
         const nd = d + cost;
         if (nd < dist[ni]) { dist[ni] = nd; queue.push([nd, ni]); }
       }
@@ -235,11 +222,17 @@ class Match {
         const spec = this.balance.units[type];
         const ang = (i / Math.max(1, q.length)) * Math.PI * 2;
         const r = 0.9 + (i % 3) * 0.55; // кольца вокруг базы, чтобы армия не слипалась
+        let sx = base.x + 0.5 + Math.cos(ang) * r;
+        let sy = base.y + 0.5 + Math.sin(ang) * r;
+        // База стоит в коридоре, но часть кольца может попасть на горы — тогда к центру.
+        if (!walkable(this.map.tiles[this.gi(Math.floor(sx), Math.floor(sy))])) {
+          sx = base.x + 0.5 + (i % 5) * 0.12 - 0.24;
+          sy = base.y + 0.5 + ((i / 5) % 5 | 0) * 0.12 - 0.24;
+        }
         this.units.push({
           id: nextEntityId++,
           owner: slot, type,
-          x: base.x + 0.5 + Math.cos(ang) * r,
-          y: base.y + 0.5 + Math.sin(ang) * r,
+          x: sx, y: sy,
           hp: spec.hp, hpMax: spec.hp,
           slowUntil: 0, cd: 0, dir: slot === 0 ? 0 : Math.PI,
         });
@@ -482,12 +475,6 @@ class Match {
       if (d < bestD) { bestD = d; best = [nx, ny]; }
     }
     if (!best) return;
-    // Если путь перекрыт вражеской постройкой или ЛЮБОЙ баррикадой (даже своей) — ломаем её.
-    const bId = this.buildGrid[best[1] * this.map.w + best[0]];
-    if (bId >= 0) {
-      const b = this.buildings.find(x => x.id === bId);
-      if (b && (b.owner !== u.owner || b.type === 'barricade')) { this.tryAttackBuilding(u, spec, b); return; }
-    }
     this.moveToward(u, spec, best[0] + 0.5, best[1] + 0.5);
   }
 

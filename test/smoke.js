@@ -11,20 +11,67 @@ function check(cond, msg) {
   else { console.error('  ✗ ' + msg); failed++; }
 }
 
-console.log('1. Генерация карт (50 сидов)');
+console.log('1. Генерация карт «коридор в горах» (50 сидов)');
 {
-  let allConnected = true, groundOk = true;
+  let allConnected = true, allWinding = true, rockOk = true, spotsOk = true;
   for (let seed = 1; seed <= 50; seed++) {
     const map = generateMap(seed);
-    if (!connected(map.tiles, map.bases[0], map.bases[1])) allConnected = false;
-    let ground = 0;
-    for (const t of map.tiles) if (t === T.GROUND) ground++;
-    if (ground < map.w * map.h * 0.3) groundOk = false;
+    if (!connected(map.tiles, map.bases[0], map.bases[1])) { allConnected = false; continue; }
+    // Извилистость: длина пути по коридору заметно больше прямой линии,
+    // плюс коридор гуляет по вертикали.
+    const dist = bfsDist(map, map.bases[0], map.bases[1]);
+    const straight = map.bases[1].x - map.bases[0].x;
+    let minY = 999, maxY = -1, rock = 0;
+    for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) {
+      const t = map.tiles[y * map.w + x];
+      if (t === T.GROUND || t === T.FOREST) { minY = Math.min(minY, y); maxY = Math.max(maxY, y); }
+      if (t === T.ROCK) rock++;
+    }
+    if (dist < straight * 1.08 || maxY - minY < 9) allWinding = false;
+    if (rock < map.w * map.h * 0.45) rockOk = false;
+    // На каждой половине должны быть горные клетки, простреливающие коридор.
+    for (const half of [0, 1]) {
+      let spots = 0;
+      for (let y = 1; y < map.h - 1; y++) for (let x = 1; x < map.w - 1; x++) {
+        if (half === 0 ? x >= map.w / 2 : x < map.w / 2) continue;
+        if (map.tiles[y * map.w + x] !== T.ROCK) continue;
+        let cover = 0;
+        for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+          const nx = x + dx, ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= map.w || ny >= map.h) continue;
+          const t = map.tiles[ny * map.w + nx];
+          if ((t === T.GROUND || t === T.FOREST) && Math.hypot(dx, dy) <= 3.6) cover++;
+        }
+        if (cover >= 6) spots++;
+      }
+      if (spots < 25) spotsOk = false;
+    }
   }
-  check(allConnected, 'базы связаны на всех 50 картах');
-  check(groundOk, 'на всех картах достаточно земли под застройку');
+  check(allConnected, 'коридор соединяет базы на всех 50 картах');
+  check(allWinding, 'коридор извилистый (длиннее прямой, гуляет по вертикали)');
+  check(rockOk, 'горы занимают большую часть карты');
+  check(spotsOk, 'на обеих половинах достаточно точек под башни у коридора');
   const m1 = generateMap(42), m2 = generateMap(42);
   check(JSON.stringify(Array.from(m1.tiles)) === JSON.stringify(Array.from(m2.tiles)), 'карта детерминирована по сиду');
+}
+
+// BFS-дистанция между базами по коридору.
+function bfsDist(map, a, b) {
+  const dist = new Int32Array(map.w * map.h).fill(-1);
+  const queue = [[a.x, a.y]];
+  dist[a.y * map.w + a.x] = 0;
+  while (queue.length) {
+    const [x, y] = queue.shift();
+    if (x === b.x && y === b.y) return dist[y * map.w + x];
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= map.w || ny >= map.h) continue;
+      const ni = ny * map.w + nx;
+      const t = map.tiles[ni];
+      if (dist[ni] < 0 && (t === T.GROUND || t === T.FOREST)) { dist[ni] = dist[y * map.w + x] + 1; queue.push([nx, ny]); }
+    }
+  }
+  return 9999;
 }
 
 console.log('2. Раундовая механика: планирование и очередь');
@@ -42,15 +89,21 @@ console.log('2. Раундовая механика: планирование и
   check(m.players[0].gold === bal.economy.startGold, 'золото возвращено при отмене');
   check(!m.spawnUnits(0, 'nosuch').ok, 'неизвестный юнит отклонён');
 
+  // Клетка коридора на своей половине (для негативного теста).
+  let corridorCell = null;
+  outer0: for (let y = 2; y < m.map.h - 2; y++) for (let x = 2; x < m.map.w / 2; x++) {
+    if (m.map.tiles[y * m.map.w + x] === T.GROUND) { corridorCell = { x, y }; break outer0; }
+  }
   let built = false;
   outer: for (let y = 2; y < m.map.h - 2; y++) for (let x = 2; x < m.map.w / 2; x++) {
-    if (m.placementError(0, 'mine', x, y) === null) {
-      check(m.build(0, 'mine', x, y).ok, 'постройка шахты в фазе планирования');
+    if (m.map.tiles[y * m.map.w + x] === T.ROCK && m.placementError(0, 'mine', x, y) === null) {
+      check(m.build(0, 'mine', x, y).ok, 'постройка шахты на горах в фазе планирования');
       built = true; break outer;
     }
   }
-  check(built, 'нашлось место под шахту');
-  check(!m.build(0, 'mine', m.map.w - 3, Math.floor(m.map.h / 2) + 2).ok, 'стройка на чужой половине отклонена');
+  check(built, 'нашлось место под шахту на горах');
+  check(corridorCell && !m.build(0, 'arrow', corridorCell.x, corridorCell.y).ok, 'стройка в коридоре отклонена');
+  check(!m.balance.buildings.barricade, 'баррикада удалена из баланса');
 
   // Скрытие: враг не видит постройку текущего раунда во время планирования.
   const snapEnemy = m.snapshotFor(1, []);
@@ -100,28 +153,21 @@ console.log('2б. Доход выплачивается в начале раун
   check(m.players[0].gold === beforeR3 + bal.economy.baseIncomePerRound + mineSpec.incomePerRound, 'выплата раунда 3 включает доход шахты');
 }
 
-console.log('3. Баррикады не пропускают даже своих');
+console.log('3. Юниты проходят коридор до вражеской базы');
 {
   const bal = balance.loadDefault();
-  const m = new Match('bar', bal, [{ name: 'A' }, { name: 'B' }], 42);
-  m.players[0].gold = 10000;
-  const base = m.map.bases[0];
-  // Кольцо баррикад вокруг собственной базы.
-  let ring = 0;
-  for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
-    if (Math.max(Math.abs(dx), Math.abs(dy)) !== 2) continue;
-    const r = m.build(0, 'barricade', base.x + dx, base.y + dy);
-    if (r.ok) ring++;
-  }
-  check(ring >= 12, `кольцо из ${ring} баррикад построено`);
+  const m = new Match('cor', bal, [{ name: 'A' }, { name: 'B' }], 42);
+  m.players[0].gold = 2000;
+  m.spawnUnits(0, 'tank');
+  m.spawnUnits(0, 'tank');
   m.spawnUnits(0, 'soldier');
   m.planLeft = 0.01;
   m.step(); m.step();
-  const barricadesBefore = m.buildings.filter(b => b.type === 'barricade').length;
-  // Полминуты боя: солдаты должны прогрызть собственную баррикаду, чтобы выйти.
-  for (let i = 0; i < bal.match.tickRate * 30 && m.units.length > 0; i++) m.step();
-  const barricadesAfter = m.buildings.filter(b => b.type === 'barricade').length;
-  check(barricadesAfter < barricadesBefore, `запертые войска сломали свою баррикаду (${barricadesBefore} -> ${barricadesAfter})`);
+  check(m.phase === 'battle' && m.units.length > 0, 'армия вышла в коридор');
+  // Без обороны (кроме турели базы) танки должны дойти и ударить по базе за ~60 сек.
+  const hpBefore = m.players[1].baseHp;
+  for (let i = 0; i < bal.match.tickRate * 75 && m.phase === 'battle'; i++) m.step();
+  check(m.players[1].baseHp < hpBefore, `армия прошла извилистый коридор и ударила по базе (HP ${Math.round(hpBefore)} -> ${Math.round(m.players[1].baseHp)})`);
 }
 
 console.log('4. Бот против бота — полный матч (ускоренно)');

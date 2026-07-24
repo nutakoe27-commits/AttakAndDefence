@@ -146,7 +146,6 @@ export function drawBuilding(ctx, type, colors, ts, time, hpFrac) {
     case 'arrow': drawArrowTower(ctx, colors); break;
     case 'cannon': drawCannon(ctx, colors, time); break;
     case 'frost': drawFrost(ctx, colors, time); break;
-    case 'barricade': drawBarricade(ctx, colors); break;
   }
   // Повреждения: трещины при < 50% HP
   if (hpFrac !== undefined && hpFrac < 0.5) {
@@ -253,21 +252,6 @@ function drawFrost(ctx, c, time) {
   ctx.strokeStyle = `rgba(255,255,255,${.4 + pulse * .4})`;
   ctx.beginPath(); ctx.moveTo(-2, -10); ctx.lineTo(-3.5, -2); ctx.stroke();
   flag(ctx, c, 7, -8);
-}
-
-function drawBarricade(ctx, c) {
-  // деревянные колья крест-накрест
-  ctx.strokeStyle = '#7a5a30'; ctx.lineWidth = 3.4; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(-10, 8); ctx.lineTo(-2, -10); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(-2, 8); ctx.lineTo(6, -10); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(6, 8); ctx.lineTo(12, -6); ctx.stroke();
-  ctx.strokeStyle = '#8f6b3a';
-  ctx.beginPath(); ctx.moveTo(10, 8); ctx.lineTo(-8, -8); ctx.stroke();
-  ctx.lineCap = 'butt';
-  // верёвка
-  ctx.strokeStyle = '#c9b98a'; ctx.lineWidth = 1.2;
-  ctx.beginPath(); ctx.moveTo(-9, 0); ctx.lineTo(11, 1); ctx.stroke();
-  flag(ctx, c, -11, -8);
 }
 
 function flag(ctx, c, x, y) {

@@ -110,8 +110,7 @@ async function waitFor(fn, timeoutMs, what) {
     outer: for (let y = 2; y < map.h - 2; y++) {
       for (let x = 2; x < map.w - 2; x++) {
         const myHalf = slot === 0 ? x < map.w / 2 : x >= map.w / 2;
-        const base = map.bases[slot];
-        if (myHalf && map.tiles[y * map.w + x] === 0 && !(x === base.x && y === base.y)) { bx = x; by = y; break outer; }
+        if (myHalf && map.tiles[y * map.w + x] === 1) { bx = x; by = y; break outer; } // 1 = горы
       }
     }
     send(c1, { t: 'build', type: 'mine', x: bx, y: by });

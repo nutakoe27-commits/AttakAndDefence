@@ -1,11 +1,17 @@
 'use strict';
-// Бот-противник средней сложности для раундового режима.
-// В фазе планирования: экономика -> оборона узких мест -> очередь волны.
-// В фазе боя действовать нельзя — бот «смотрит» и собирает разведданные
-// (сколько врагов дошло до его половины, сколько HP базы потеряно),
-// чтобы в следующем раунде скорректировать план.
-// «Средний» уровень: паузы между действиями и шанс ошибки (пропуска хода).
+// Бот-противник средней сложности для режима «коридор в горах».
+//
+// Что делает его «умным, но не слишком»:
+//  - анализирует карту: считает, сколько клеток коридора простреливает каждая
+//    горная клетка, и ставит башни в изгибах (лучшие точки покрытия),
+//    но выбирает случайно из топа, а не строго оптимально;
+//  - собирает разведку между раундами (потери базы, прорывы, пробил ли он сам
+//    оборону) и корректирует состав волн: не пробил дважды — копит на тяжёлый кулак;
+//  - резервирует ~45% золота раунда под армию — не уходит в глухую оборону;
+//  - действует с паузами и с шансом «ошибки» (пропуск хода) — оставляет игроку окна.
 const { T, walkable } = require('./mapgen');
+
+const TOWER_RANGE_EST = 3.6; // оценочный радиус для расчёта покрытия коридора
 
 class Bot {
   constructor(match, slot) {
@@ -13,58 +19,66 @@ class Bot {
     this.slot = slot;
     this.cfg = match.balance.bot;
     this.actionTimer = 1.0;
-    this.plannedRound = 0;      // раунд, для которого уже запланирована волна
+    this.plannedRound = 0;
     this.wavesQueued = 0;
-    this.buildSpots = this.findBuildSpots();
-    this.chokeSpots = this.findChokeSpots();
-    // Разведка прошлого боя.
-    this.intel = { incursion: 0, hpLostLastBattle: 0 };
-    this.battleSnap = null; // {hp, t} на момент начала боя
-    this.reserve = 0;       // золото, зарезервированное под армию этого раунда
+    this.analyzeMap();
+    // Разведка.
+    this.intel = { incursion: 0, hpLostLastBattle: 0, dealtLastBattle: 0 };
+    this.battleSnap = null;   // {myHp, foeHp, t} на момент начала боя
+    this.stuckRounds = 0;     // подряд раундов без урона по вражеской базе
+    this.savingPunch = false; // копим золото на тяжёлую волну
+    this.reserve = 0;
   }
 
-  // Клетки своей половины, пригодные для застройки, отсортированные по близости к базе.
-  findBuildSpots() {
+  // ---------- Анализ карты ----------
+  // Для каждой горной клетки своей половины считаем покрытие: сколько клеток
+  // коридора попадает в радиус башни. Изгибы змейки дают лучшие точки.
+  analyzeMap() {
     const m = this.match, map = m.map;
     const base = map.bases[this.slot];
-    const spots = [];
     const half = map.w / 2;
+    const corridor = [];
+    for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) {
+      if (walkable(map.tiles[y * map.w + x])) corridor.push({ x, y });
+    }
+    this.spots = [];
     for (let y = 1; y < map.h - 1; y++) {
       for (let x = 1; x < map.w - 1; x++) {
         if (this.slot === 0 ? x >= half : x < half) continue;
-        if (map.tiles[y * map.w + x] !== T.GROUND) continue;
-        if (x === base.x && y === base.y) continue;
-        spots.push({ x, y, d: Math.hypot(x - base.x, y - base.y) });
+        if (map.tiles[y * map.w + x] !== T.ROCK) continue;
+        let coverage = 0;
+        for (const c of corridor) {
+          const d = Math.hypot(c.x - x, c.y - y);
+          if (d <= TOWER_RANGE_EST) coverage++;
+        }
+        this.spots.push({ x, y, coverage, dBase: Math.hypot(x - base.x, y - base.y) });
       }
     }
-    spots.sort((a, b) => a.d - b.d);
-    return spots;
+    // Боевые точки: хорошее покрытие, ближе к своей базе — надёжнее.
+    this.towerSpots = this.spots
+      .filter(s => s.coverage >= 6)
+      .sort((a, b) => (b.coverage - b.dBase * 0.35) - (a.coverage - a.dBase * 0.35));
+    // Экономика — подальше от коридора (координаты всё равно безопасны, но так красивее).
+    this.ecoSpots = [...this.spots].sort((a, b) => (a.dBase + a.coverage * 0.3) - (b.dBase + b.coverage * 0.3));
   }
 
-  // Узкие места: мало проходимых соседей + ближе к середине карты.
-  findChokeSpots() {
-    const m = this.match, map = m.map;
-    const scored = [];
-    for (const s of this.buildSpots) {
-      let open = 0;
-      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-        const t = map.tiles[(s.y + dy) * map.w + (s.x + dx)];
-        if (walkable(t)) open++;
-      }
-      const midDist = Math.abs(s.x - map.w / 2);
-      scored.push({ ...s, score: open + midDist * 0.35 });
-    }
-    scored.sort((a, b) => a.score - b.score);
-    return scored;
+  me() { return this.match.players[this.slot]; }
+  foe() { return this.match.players[1 - this.slot]; }
+  canSpend(cost) { return this.me().gold - cost >= this.reserve; }
+
+  myBuildings(type) {
+    return this.match.buildings.filter(b => b.owner === this.slot && (!type || b.type === type));
   }
 
+  isFree(s) { return this.match.buildGrid[s.y * this.match.map.w + s.x] < 0; }
+
+  // ---------- Главный цикл ----------
   update(dt) {
     const m = this.match;
     if (m.over) return;
 
     if (m.phase === 'battle') {
-      if (!this.battleSnap) this.battleSnap = { hp: m.players[this.slot].baseHp, t: m.time };
-      // Разведка: считаем максимум вражеских юнитов на нашей половине за бой.
+      if (!this.battleSnap) this.battleSnap = { myHp: this.me().baseHp, foeHp: this.foe().baseHp, t: m.time };
       const half = m.map.w / 2;
       let n = 0;
       for (const u of m.units) {
@@ -75,65 +89,57 @@ class Bot {
       return;
     }
 
-    // Фаза планирования.
-    if (this.plannedRound !== m.round) {
-      // Начало нового раунда: фиксируем потери прошлого боя (без учёта распада sudden death).
-      const me = m.players[this.slot];
-      if (this.battleSnap) {
-        let delta = this.battleSnap.hp - me.baseHp;
-        const mc = m.balance.match;
-        if (m.time > mc.suddenDeathAtSec) delta -= (mc.suddenDeathDecayPerSec ?? 0) * (m.time - this.battleSnap.t);
-        this.intel.hpLostLastBattle = Math.max(0, delta);
-        this.battleSnap = null;
-      }
-      this.plannedRound = m.round;
-      this.waveDone = false;
-      // Ключ к балансу: ~45% текущего золота резервируется под армию —
-      // даже под давлением бот не уходит в глухую оборону без войск.
-      this.reserve = me.gold * (0.4 + Math.random() * 0.15);
-      this.actionTimer = 0.6 + Math.random() * 0.8;
-    }
+    if (this.plannedRound !== m.round) this.startRound();
 
     this.actionTimer -= dt;
     if (this.actionTimer > 0) return;
     this.actionTimer = this.cfg.actionIntervalSec * (0.55 + Math.random() * 0.5);
-    // Шанс «ошибки» — бот просто пропускает ход, чтобы ощущаться человечнее.
     if (Math.random() < this.cfg.mistakeChance) return;
     this.think();
 
-    // Волну ставим ближе к концу планирования, когда экономика раунда уже потрачена.
     if (!this.waveDone && m.planLeft < (m.balance.match.planPhaseSec ?? 20) * 0.45) {
       this.queueWave();
       this.waveDone = true;
     }
   }
 
-  me() { return this.match.players[this.slot]; }
-
-  // Можно ли потратить на постройку, не залезая в армейский резерв.
-  canSpend(cost) {
-    return this.me().gold - cost >= this.reserve;
-  }
-
-  myBuildings(type) {
-    return this.match.buildings.filter(b => b.owner === this.slot && (!type || b.type === type));
+  startRound() {
+    const m = this.match;
+    const me = this.me();
+    // Итоги прошлого боя (без учёта распада sudden death).
+    if (this.battleSnap) {
+      const mc = m.balance.match;
+      const decay = m.time > mc.suddenDeathAtSec ? (mc.suddenDeathDecayPerSec ?? 0) * (m.time - this.battleSnap.t) : 0;
+      this.intel.hpLostLastBattle = Math.max(0, this.battleSnap.myHp - me.baseHp - decay);
+      this.intel.dealtLastBattle = Math.max(0, this.battleSnap.foeHp - this.foe().baseHp - decay);
+      this.battleSnap = null;
+      // Наши волны дважды разбились об оборону без урона базе? Копим кулак.
+      if (this.wavesQueued > 0 && this.intel.dealtLastBattle < 30) this.stuckRounds++;
+      else this.stuckRounds = 0;
+      if (this.stuckRounds >= 2 && !this.savingPunch && Math.random() < 0.75) {
+        this.savingPunch = true;
+        this.stuckRounds = 0;
+      }
+    }
+    this.plannedRound = m.round;
+    this.waveDone = false;
+    this.reserve = me.gold * (0.4 + Math.random() * 0.15);
   }
 
   think() {
     const m = this.match;
-    const p = this.me();
 
-    // 1. Реакция на прошлый бой: нас продавили — усиливаем оборону.
+    // 1. Нас бьют — усиливаем оборону в первую очередь.
     const pressured = this.intel.hpLostLastBattle > 0 || this.intel.incursion >= this.cfg.defendThreshold;
     if (pressured && Math.random() < 0.7) {
       this.intel.incursion = Math.max(0, this.intel.incursion - 3);
       if (this.growDefense()) return;
     }
 
-    // 2. Ранний приоритет: хотя бы одна башня в первые раунды.
-    const defTowers = this.myBuildings().filter(b => m.balance.buildings[b.type].kind === 'defense' && b.type !== 'barricade').length;
+    // 2. Ранний приоритет: первая башня.
+    const defTowers = this.myBuildings().filter(b => m.balance.buildings[b.type].kind === 'defense').length;
     if (m.round <= 3 && defTowers === 0 && this.canSpend(m.balance.buildings.arrow.cost)) {
-      this.placeChoke('arrow');
+      this.placeTower('arrow');
       return;
     }
 
@@ -150,10 +156,10 @@ class Bot {
     const banks = this.myBuildings('bank').length;
     const bankSpec = m.balance.buildings.bank;
     if (mines >= 4 && banks < (bankSpec.maxCount || 5) && this.canSpend(bankSpec.cost)) {
-      this.placeSafe('bank');
+      this.placeEco('bank');
       return;
     }
-    if (this.canSpend(m.balance.buildings.mine.cost)) this.placeSafe('mine');
+    if (this.canSpend(m.balance.buildings.mine.cost)) this.placeEco('mine');
   }
 
   growDefense() {
@@ -163,24 +169,64 @@ class Bot {
     let type = 'arrow';
     if (towers.length >= 2 && roll < 0.3) type = 'cannon';
     else if (towers.length >= 1 && roll < 0.5) type = 'frost';
-    // Иногда — баррикада, чтобы перекроить пути (в т.ч. и свои: бот про это знает
-    // и ставит их сбоку от прямой линии на свою базу).
-    if (towers.length >= 2 && roll > 0.85) type = 'barricade';
     const spec = m.balance.buildings[type];
     if (!this.canSpend(spec.cost)) return false;
-    return this.placeChoke(type);
+    return this.placeTower(type);
   }
 
+  // Башня: лучшие точки покрытия + бонус за кластер (замедление + сплэш рядом = зона смерти).
+  // Выбор случайный из топ-4 — сильно, но не идеально.
+  placeTower(type) {
+    const m = this.match;
+    const candidates = this.towerSpots.filter(s => this.isFree(s)).slice(0, 12);
+    if (!candidates.length) return this.placeEco(type);
+    const myDef = this.myBuildings().filter(b => m.balance.buildings[b.type].kind === 'defense');
+    const scored = candidates.map(s => {
+      let cluster = 0;
+      for (const b of myDef) {
+        if (Math.hypot(b.cx - s.x, b.cy - s.y) <= 2.5) cluster++;
+      }
+      return { s, score: s.coverage + cluster * 3 };
+    }).sort((a, b) => b.score - a.score);
+    const pick = scored[Math.floor(Math.random() * Math.min(4, scored.length))].s;
+    return m.build(this.slot, type, pick.x, pick.y).ok;
+  }
+
+  placeEco(type) {
+    const m = this.match;
+    for (const s of this.ecoSpots) {
+      if (!this.isFree(s)) continue;
+      if (m.build(this.slot, type, s.x, s.y).ok) return true;
+    }
+    return false;
+  }
+
+  // ---------- Волны ----------
   queueWave() {
     const m = this.match, p = this.me();
+
+    // Копим кулак: пропускаем волну, золото переходит на следующий раунд.
+    if (this.savingPunch && this.wavesQueued > 0) {
+      this.savingPunch = false;
+      this.punchNext = true;
+      return;
+    }
+
     this.wavesQueued++;
-    this.reserve = 0; // резерв высвобождается в армию
-    // Тратим почти всё: небольшая заначка переносится на следующий раунд.
-    let budget = p.gold * (0.8 + Math.min(0.15, this.wavesQueued * 0.02));
+    this.reserve = 0;
+    let budget = p.gold * (this.punchNext ? 0.95 : 0.8 + Math.min(0.15, this.wavesQueued * 0.02));
+
     const late = m.time > 300;
-    const comps = late
-      ? [['tank', 'healer', 'soldier', 'breaker'], ['breaker', 'breaker', 'soldier', 'archer'], ['tank', 'archer', 'archer', 'healer']]
-      : [['soldier', 'scout'], ['soldier', 'archer'], ['scout', 'scout', 'soldier'], ['soldier', 'soldier']];
+    let comps;
+    if (this.punchNext) {
+      // Тяжёлый кулак: танки держат урон башен, целители тянут, разрушители ломают.
+      comps = [['tank', 'tank', 'healer', 'breaker', 'breaker'], ['tank', 'healer', 'breaker', 'soldier', 'soldier']];
+      this.punchNext = false;
+    } else if (late) {
+      comps = [['tank', 'healer', 'soldier', 'breaker'], ['breaker', 'breaker', 'soldier', 'archer'], ['tank', 'archer', 'archer', 'healer']];
+    } else {
+      comps = [['soldier', 'scout'], ['soldier', 'archer'], ['scout', 'scout', 'soldier'], ['soldier', 'soldier']];
+    }
     const comp = comps[Math.floor(Math.random() * comps.length)];
     for (const type of comp) {
       const cost = m.balance.units[type].cost;
@@ -191,33 +237,6 @@ class Bot {
       if (!m.spawnUnits(this.slot, 'scout').ok) break;
       budget -= m.balance.units.scout.cost;
     }
-  }
-
-  placeSafe(type) {
-    const m = this.match;
-    for (const s of this.buildSpots) {
-      if (s.d > 10) break;
-      if (m.buildGrid[s.y * m.map.w + s.x] >= 0) continue;
-      if (m.build(this.slot, type, s.x, s.y).ok) return true;
-    }
-    for (const s of this.buildSpots) {
-      if (m.buildGrid[s.y * m.map.w + s.x] >= 0) continue;
-      if (m.build(this.slot, type, s.x, s.y).ok) return true;
-    }
-    return false;
-  }
-
-  placeChoke(type) {
-    const m = this.match;
-    const base = m.map.bases[this.slot];
-    for (const s of this.chokeSpots) {
-      if (m.buildGrid[s.y * m.map.w + s.x] >= 0) continue;
-      if (Math.random() < 0.35) continue;
-      // Баррикаду не ставим на прямой линии базы, чтобы не запереть свои волны.
-      if (type === 'barricade' && Math.abs(s.y - base.y) < 3) continue;
-      if (m.build(this.slot, type, s.x, s.y).ok) return true;
-    }
-    return this.placeSafe(type === 'barricade' ? 'arrow' : type);
   }
 }
 

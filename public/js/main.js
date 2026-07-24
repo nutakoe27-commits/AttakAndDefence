@@ -317,8 +317,8 @@ function startPlacing(key) {
   canvas.classList.add('placing');
   const hint = $('#placement-hint');
   hint.textContent = IS_TOUCH
-    ? 'Тапните по своей половине карты, затем «✓ Построить»'
-    : 'ЛКМ — построить · ПКМ / Esc — отмена';
+    ? 'Тапните по горам на своей половине, затем «✓ Построить»'
+    : 'Стройте на горах · ЛКМ — построить · ПКМ / Esc — отмена';
   hint.classList.remove('hidden');
   document.querySelectorAll('.shop-btn').forEach(b => b.classList.toggle('active', b.dataset.key === key && b.dataset.kind === 'building'));
   updatePlaceBar();
@@ -334,13 +334,11 @@ function stopPlacing() {
 
 function placementValid(type, cx, cy) {
   if (!gs.map || !gs.curr) return false;
-  const { w, h, tiles, bases } = gs.map;
+  const { w, h, tiles } = gs.map;
   if (cx < 0 || cy < 0 || cx >= w || cy >= h) return false;
-  if (tiles[cy * w + cx] !== T.GROUND) return false;
+  if (tiles[cy * w + cx] !== T.ROCK) return false; // строим только на горах
   const half = w / 2;
   if (gs.mySlot === 0 ? cx >= half : cx < half) return false;
-  const base = bases[gs.mySlot];
-  if (cx === base.x && cy === base.y) return false;
   for (const b of gs.curr.buildings) {
     if (b[3] === cx && b[4] === cy) return false;
   }

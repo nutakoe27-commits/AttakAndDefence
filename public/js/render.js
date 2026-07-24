@@ -98,25 +98,32 @@ export class Renderer {
           }
         }
         if (t === T.ROCK) {
-          ctx.fillStyle = `rgb(${60 + n * 14 | 0},${64 + n * 14 | 0},${72 + n * 12 | 0})`;
+          // Горные плато: светлее прежних скал — здесь строят, это «рабочая» поверхность.
+          const shade = 0.92 + n * 0.16;
+          ctx.fillStyle = `rgb(${(96 * shade) | 0},${(97 * shade) | 0},${(106 * shade) | 0})`;
           ctx.fillRect(px, py, TILE, TILE);
-          // грани скал
-          const up = y > 0 && tiles[(y - 1) * w + x] !== T.ROCK;
-          if (up) {
-            ctx.fillStyle = 'rgba(255,255,255,.16)';
-            ctx.fillRect(px, py, TILE, 5);
-          }
-          const down = y < h - 1 && tiles[(y + 1) * w + x] !== T.ROCK;
-          if (down) {
-            ctx.fillStyle = 'rgba(0,0,0,.4)';
-            ctx.fillRect(px, py + TILE - 6, TILE, 6);
-          }
+          // обрыв к коридору: светлая кромка сверху, тень снизу
+          const down = y < h - 1 && (tiles[(y + 1) * w + x] === T.GROUND || tiles[(y + 1) * w + x] === T.FOREST);
+          const up = y > 0 && (tiles[(y - 1) * w + x] === T.GROUND || tiles[(y - 1) * w + x] === T.FOREST);
+          if (up) { ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.fillRect(px, py, TILE, 5); }
+          if (down) { ctx.fillStyle = 'rgba(0,0,0,.42)'; ctx.fillRect(px, py + TILE - 6, TILE, 6); }
+          const left = x > 0 && (tiles[y * w + x - 1] === T.GROUND || tiles[y * w + x - 1] === T.FOREST);
+          const right = x < w - 1 && (tiles[y * w + x + 1] === T.GROUND || tiles[y * w + x + 1] === T.FOREST);
+          if (left) { ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.fillRect(px, py, 4, TILE); }
+          if (right) { ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.fillRect(px + TILE - 4, py, 4, TILE); }
           // камни-обломки
           for (let i = 0; i < 3; i++) {
             const rx = hash2(x * 3 + i, y * 9, seed), ry = hash2(x * 9, y * 3 + i, seed);
-            ctx.fillStyle = `rgba(${90 + i * 10},${95 + i * 10},${105 + i * 8},.5)`;
+            ctx.fillStyle = `rgba(${118 + i * 10},${122 + i * 10},${132 + i * 8},.55)`;
             ctx.beginPath();
             ctx.arc(px + rx * TILE, py + ry * TILE, 2 + hash2(x + i, y - i, seed) * 3, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          // редкие снежные шапки в глубине гор
+          if (n > 0.82 && !up && !down && !left && !right) {
+            ctx.fillStyle = 'rgba(235,240,248,.35)';
+            ctx.beginPath();
+            ctx.arc(px + TILE * 0.5, py + TILE * 0.4, TILE * 0.22, 0, Math.PI * 2);
             ctx.fill();
           }
         }
@@ -370,6 +377,16 @@ export class Renderer {
 
   drawPlacement(ctx, ui) {
     const { cx, cy, valid, type } = ui.placing;
+    // Подсветка гор своей половины — где вообще можно строить.
+    const { w, h, tiles } = this.map;
+    const half = w / 2;
+    const myLeft2 = this.mySlot === 0;
+    ctx.fillStyle = 'rgba(120,220,140,.08)';
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = myLeft2 ? 1 : half; x < (myLeft2 ? half : w - 1); x++) {
+        if (tiles[y * w + x] === T.ROCK) ctx.fillRect(x * TILE + 3, y * TILE + 3, TILE - 6, TILE - 6);
+      }
+    }
     if (cx === null) return;
     ctx.fillStyle = valid ? 'rgba(80,220,120,.3)' : 'rgba(230,70,70,.35)';
     ctx.fillRect(cx * TILE, cy * TILE, TILE, TILE);

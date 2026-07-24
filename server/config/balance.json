@@ -162,14 +162,6 @@
       "slowFactor": 0.4,
       "slowDuration": 1.5,
       "hotkey": "t"
-    },
-    "barricade": {
-      "name": "Баррикада",
-      "desc": "Не пропускает никого — даже свои войска пойдут в обход или будут её ломать.",
-      "kind": "defense",
-      "cost": 50,
-      "hp": 550,
-      "hotkey": "y"
     }
   },
   "bot": {
