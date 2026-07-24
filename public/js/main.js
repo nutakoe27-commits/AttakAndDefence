@@ -235,6 +235,9 @@ const ui = {
   selectedBuilding: null,
   balance: null,
 };
+// Отладочные хуки (только чтение состояния) — безвредны, полезны для диагностики.
+window.__ui = ui;
+window.__renderer = renderer;
 
 function buildShop() {
   const myColors = OWNER_COLORS[gs.mySlot];
@@ -392,6 +395,8 @@ canvas.addEventListener('mousedown', (e) => {
 });
 
 window.addEventListener('mousemove', (e) => {
+  // На таче браузер шлёт синтетические mouse-события — они не должны трогать призрак постройки.
+  if (isGhostMouse()) return;
   if (dragging === 'minimap') {
     const rect = canvas.getBoundingClientRect();
     const mm = renderer.minimapToWorld(e.clientX - rect.left, e.clientY - rect.top);
@@ -516,8 +521,10 @@ canvas.addEventListener('touchmove', (e) => {
       return;
     }
     if (tc.panLast) {
+      // Пока сдвиг в пределах порога тапа — не двигаем камеру, иначе тап промахнётся мимо клетки.
+      if (!tc.moved && tc.startPos && Math.hypot(p.x - tc.startPos.x, p.y - tc.startPos.y) <= 9) return;
+      tc.moved = true;
       const dx = p.x - tc.panLast.x, dy = p.y - tc.panLast.y;
-      if (tc.startPos && Math.hypot(p.x - tc.startPos.x, p.y - tc.startPos.y) > 9) tc.moved = true;
       renderer.cam.x -= dx / renderer.cam.zoom;
       renderer.cam.y -= dy / renderer.cam.zoom;
       renderer.clampCam();
@@ -617,11 +624,21 @@ $('#btn-sell').addEventListener('click', () => {
 });
 
 // Горячие клавиши.
+// Физическая клавиша, не зависящая от раскладки (кириллица, Dvorak и т.п.):
+// 'KeyQ' -> 'q', 'Digit1'/'Numpad1' -> '1', остальное -> e.key ('escape', 'shift', 'arrowleft').
+function physKey(e) {
+  const c = e.code || '';
+  if (c.startsWith('Key')) return c.slice(3).toLowerCase();
+  if (c.startsWith('Digit')) return c.slice(5);
+  if (c.startsWith('Numpad') && /^\d$/.test(c.slice(6))) return c.slice(6);
+  return (e.key || '').toLowerCase();
+}
+
 const keys = new Set();
 window.addEventListener('keydown', (e) => {
-  keys.add(e.key.toLowerCase());
+  const k = physKey(e);
+  keys.add(k);
   if (!$('#screen-game').classList.contains('active')) return;
-  const k = e.key.toLowerCase();
   if (k === 'escape') { stopPlacing(); ui.selectedBuilding = null; $('#selection-panel').classList.add('hidden'); return; }
   if (!gs.balance) return;
   for (const [key, spec] of Object.entries(gs.balance.units)) {
@@ -631,7 +648,7 @@ window.addEventListener('keydown', (e) => {
     if (spec.hotkey === k) { startPlacing(key); return; }
   }
 });
-window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
+window.addEventListener('keyup', (e) => keys.delete(physKey(e)));
 
 $('#btn-surrender').addEventListener('click', () => {
   if (confirm('Сдаться и покинуть бой?')) net.send({ t: 'surrender' });
