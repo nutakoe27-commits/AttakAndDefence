@@ -5,3 +5,4 @@ server/config/admin.settings.json
 .env
 server/data/
 dist-yandex/
+attack-and-defence-yandex.zip
