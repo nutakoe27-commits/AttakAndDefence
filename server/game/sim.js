@@ -225,6 +225,12 @@ class Match {
   startBattle() {
     this.phase = 'battle';
     this.battleTime = 0;
+    // Прогрессивное усиление войск: с каждым раундом юниты выходят крепче и злее.
+    // Башни не растут — к концу матча атака гарантированно пробивает оборону,
+    // и дешёвые юниты остаются полезными, а не только танки.
+    const mc = this.balance.match;
+    const hpMul = 1 + (mc.unitHpGrowthPerRound ?? 0) * (this.round - 1);
+    const dmgMul = 1 + (mc.unitDmgGrowthPerRound ?? 0) * (this.round - 1);
     for (let slot = 0; slot < 2; slot++) {
       const base = this.map.bases[slot];
       const q = this.queued[slot];
@@ -244,7 +250,8 @@ class Match {
           id: nextEntityId++,
           owner: slot, type,
           x: sx, y: sy,
-          hp: spec.hp, hpMax: spec.hp,
+          hp: spec.hp * hpMul, hpMax: spec.hp * hpMul,
+          dmgMul,
           slowUntil: 0, cd: 0, dir: slot === 0 ? 0 : Math.PI,
         });
         this.players[slot].unitsSpawned++;
@@ -398,7 +405,7 @@ class Match {
       if (d <= spec.healRadius && frac < worst) { worst = frac; patient = a; }
     }
     if (patient && u.cd <= 0) {
-      patient.hp = Math.min(patient.hpMax, patient.hp + spec.healPerSec);
+      patient.hp = Math.min(patient.hpMax, patient.hp + spec.healPerSec * (u.dmgMul || 1));
       u.cd = 1;
       this.events.push({ t: 'heal', x: patient.x, y: patient.y });
     }
@@ -426,7 +433,7 @@ class Match {
     if (u.cd > 0) return true;
     u.cd = 1 / spec.attackRate;
     const tspec = this.balance.units[target.type];
-    const dmg = Math.max(1, spec.dmg - (tspec.armor || 0));
+    const dmg = Math.max(1, spec.dmg * (u.dmgMul || 1) - (tspec.armor || 0));
     target.hp -= dmg;
     this.events.push({ t: 'hit', x: target.x, y: target.y, r: spec.range > 2 });
     if (spec.range > 2) this.events.push({ t: 'proj', x1: u.x, y1: u.y, x2: target.x, y2: target.y, k: 'arrow' });
@@ -443,7 +450,7 @@ class Match {
     u.dir = Math.atan2(base.y + 0.5 - u.y, base.x + 0.5 - u.x);
     if (u.cd > 0) return true;
     u.cd = 1 / spec.attackRate;
-    const dmg = spec.dmg * spec.bonusVsBuildings * this.suddenDeathMult();
+    const dmg = spec.dmg * (u.dmgMul || 1) * spec.bonusVsBuildings * this.suddenDeathMult();
     this.players[enemySlot].baseHp -= dmg;
     this.events.push({ t: 'basehit', x: base.x + 0.5, y: base.y + 0.5, owner: enemySlot });
     return true;

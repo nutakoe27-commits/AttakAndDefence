@@ -259,6 +259,16 @@ class Lobby {
     const m = runner.match;
     // Запись в БД для аналитики баланса.
     try { db.recordMatch(m.statsSummary()); } catch (e) { console.error('[match] db.recordMatch:', e.message); }
+    // Лидерборд: обновляем рейтинг живых игроков (боты не участвуют).
+    try {
+      for (let slot = 0; slot < 2; slot++) {
+        const p = m.players[slot];
+        if (p.isBot || !runner.tokens[slot]) continue;
+        const outcome = m.winner === slot ? 'win' : m.winner == null ? 'draw' : 'loss';
+        const vsBot = m.players[1 - slot].isBot;
+        db.updateLeaderboard(runner.tokens[slot], p.name, outcome, vsBot);
+      }
+    } catch (e) { console.error('[match] leaderboard:', e.message); }
     this.history.unshift({
       id: runner.id,
       finishedAt: Date.now(),

@@ -271,6 +271,18 @@ body {
 .howto-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 20px; text-align: left; font-size: 13.5px; line-height: 1.55; color: #b9c8da; margin-bottom: 24px; }
 .howto-grid b { color: var(--text); }
 
+/* ---------- Язык и лидерборд ---------- */
+.menu-card { position: relative; }
+.lang-btn { position: absolute; top: 14px; right: 14px; font-size: 12px; padding: 5px 10px; }
+.lb-card { max-width: 480px; }
+.lb-me { color: var(--gold); font-weight: 700; margin-bottom: 14px; min-height: 20px; }
+.lb-wrap { max-height: 46vh; overflow-y: auto; margin-bottom: 18px; }
+#lb-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+#lb-table th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+#lb-table td { padding: 7px 10px; border-bottom: 1px solid rgba(44,58,77,.5); text-align: left; font-variant-numeric: tabular-nums; }
+#lb-table tr.me-row td { color: var(--gold); font-weight: 700; }
+#lb-table .medal { font-size: 16px; }
+
 /* ---------- Игра с другом ---------- */
 .friend-card { max-width: 430px; display: flex; flex-direction: column; gap: 16px; }
 .friend-wide { width: 100%; }

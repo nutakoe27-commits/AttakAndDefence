@@ -17,6 +17,8 @@
     "planPhaseSec": 20,
     "battleMinSec": 3,
     "battleMaxSec": 90,
+    "unitHpGrowthPerRound": 0.1,
+    "unitDmgGrowthPerRound": 0.06,
     "fatiguePctPerSec": 0.08,
     "suddenDeathAtSec": 630,
     "suddenDeathRampSec": 120,

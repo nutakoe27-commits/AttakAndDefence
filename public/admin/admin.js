@@ -260,6 +260,7 @@
     healRadius: 'Радиус лечения', incomePerRound: 'Доход/раунд', incomeMult: '+доход, доля', maxCount: 'Макс. шт',
     splash: 'Сплэш', slowFactor: 'Замедление, доля', slowDuration: 'Замедление, с',
     planPhaseSec: 'Планирование, с', battleMinSec: 'Мин. бой, с', battleMaxSec: 'Макс. бой, с',
+    unitHpGrowthPerRound: '+HP юнитов/раунд, доля', unitDmgGrowthPerRound: '+урон юнитов/раунд, доля',
     fatiguePctPerSec: 'Усталость, доля HP/с',
     startGold: 'Стартовое золото', baseIncomePerRound: 'Базовый доход/раунд', incomeGrowthPerRound: 'Рост дохода/раунд',
     baseHp: 'HP базы', refundRatio: 'Возврат при продаже', targetDurationMin: 'Целевая длит., мин',

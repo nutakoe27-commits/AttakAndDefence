@@ -55,7 +55,52 @@ class Stats {
         units_json TEXT, losses_json TEXT, buildings_json TEXT,
         PRIMARY KEY (match_id, slot)
       );
+      CREATE TABLE IF NOT EXISTS leaderboard (
+        token TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        rating INTEGER NOT NULL DEFAULT 1000,
+        wins INTEGER NOT NULL DEFAULT 0,
+        losses INTEGER NOT NULL DEFAULT 0,
+        draws INTEGER NOT NULL DEFAULT 0,
+        updated INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_lb_rating ON leaderboard(rating DESC);
     `);
+  }
+
+  // ---------- Лидерборд ----------
+  // Простая рейтинговая система: против человека ±25/-15, против бота +10/-5.
+  updateLeaderboard(token, name, outcome, vsBot) {
+    if (!this.enabled || !token) return;
+    try {
+      const row = this.db.prepare('SELECT rating, wins, losses, draws FROM leaderboard WHERE token = ?').get(token)
+        || { rating: 1000, wins: 0, losses: 0, draws: 0 };
+      let delta = 0;
+      if (outcome === 'win') { delta = vsBot ? 10 : 25; row.wins++; }
+      else if (outcome === 'loss') { delta = vsBot ? -5 : -15; row.losses++; }
+      else row.draws++;
+      const rating = Math.max(100, row.rating + delta);
+      this.db.prepare(
+        `INSERT OR REPLACE INTO leaderboard (token, name, rating, wins, losses, draws, updated)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`)
+        .run(token, String(name || 'Игрок').slice(0, 20), rating, row.wins, row.losses, row.draws, Date.now());
+    } catch (e) {
+      console.error('[db] leaderboard:', e.message);
+    }
+  }
+
+  topPlayers(limit = 50) {
+    if (!this.enabled) return [];
+    return this.db.prepare(
+      'SELECT name, rating, wins, losses FROM leaderboard ORDER BY rating DESC, wins DESC LIMIT ?').all(limit | 0);
+  }
+
+  playerRank(token) {
+    if (!this.enabled || !token) return null;
+    const me = this.db.prepare('SELECT name, rating, wins, losses FROM leaderboard WHERE token = ?').get(token);
+    if (!me) return null;
+    const above = this.db.prepare('SELECT COUNT(*) n FROM leaderboard WHERE rating > ?').get(me.rating);
+    return { rank: (above.n | 0) + 1, name: me.name, rating: me.rating, wins: me.wins, losses: me.losses };
   }
 
   recordMatch(s) {

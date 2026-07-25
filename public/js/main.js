@@ -5,8 +5,25 @@ import { Renderer, TILE, T } from './render.js';
 import { Tutorial } from './tutorial.js';
 import { OWNER_COLORS, makeIcon } from './sprites.js';
 import { Ya } from './yandex.js';
+import { t, detectLang, setLang, lang as getLangRef, unitName, unitDesc, bldName, bldDesc, trError, trPlayerName } from './i18n.js';
+import * as i18n from './i18n.js';
 
 const $ = (s) => document.querySelector(s);
+
+// ---------- Локализация ----------
+// Применяет словарь ко всем статическим элементам с data-i18n.
+function applyStaticI18n() {
+  document.querySelectorAll('[data-i18n]').forEach(el => { el.innerHTML = t(el.dataset.i18n); });
+  $('#player-name').placeholder = t('menu.name_ph');
+  $('#howto-grid').innerHTML = t('howto.html');
+  $('#hud-gold-wrap').title = t('hud.gold_title');
+  $('#hud-sd').textContent = t('hud.sd');
+  $('#btn-surrender').title = t('hud.surrender_title');
+  $('#btn-lang').textContent = i18n.lang === 'ru' ? '🌐 RU' : '🌐 EN';
+  document.documentElement.lang = i18n.lang;
+}
+
+detectLang(); // до SDK — по браузеру/сохранённому выбору; после Ya.init уточним
 
 const net = new Net();
 const gs = new GameState();
@@ -18,9 +35,13 @@ let gamePaused = false; // пауза при сворачивании/рекла
 // Инициализация SDK Яндекса (no-op на своём хостинге) и облачных сохранений.
 (async () => {
   await Ya.init();
+  // Язык: сохранённый выбор > язык площадки Яндекса > язык браузера.
+  if (!localStorage.getItem('ad_lang') && Ya.available) detectLang(Ya.lang);
+  applyStaticI18n();
   try {
     const prefs = await Ya.loadAll();
     if (prefs.tutorial_done) localStorage.setItem('ad_tutorial_done', '1');
+    if (prefs.lang) { setLang(String(prefs.lang)); applyStaticI18n(); }
     if (prefs.name && !nameInput.value) nameInput.value = String(prefs.name).slice(0, 20);
   } catch (_) {}
   Ya.loadingReady();   // сообщаем платформе, что игра готова
@@ -30,6 +51,15 @@ let gamePaused = false; // пауза при сворачивании/рекла
   Ya.on('resume', () => { gamePaused = false; });
   document.addEventListener('visibilitychange', () => { gamePaused = document.hidden; });
 })();
+
+// Переключатель языка: RU <-> EN, мгновенно перерисовывает интерфейс.
+$('#btn-lang').addEventListener('click', () => {
+  setLang(i18n.lang === 'ru' ? 'en' : 'ru');
+  Ya.save({ lang: i18n.lang });
+  applyStaticI18n();
+  if (gs.balance) buildShop(); // перерисовать магазин с новыми именами
+  lastQueueJson = ''; // форс-обновление чипов очереди
+});
 
 // ---------- Экраны ----------
 function showScreen(id) {
@@ -56,7 +86,7 @@ $('#btn-play').addEventListener('click', () => {
   const name = nameInput.value.trim() || 'Полководец';
   localStorage.setItem('ad_name', name);
   Ya.save({ name });
-  if (!net.connected) { toast('Нет соединения с сервером', 'err'); return; }
+  if (!net.connected) { toast(t('toast.no_conn'), 'err'); return; }
   net.send({ t: 'queue', name });
 });
 $('#btn-howto').addEventListener('click', () => $('#howto-modal').classList.remove('hidden'));
@@ -80,7 +110,7 @@ function friendShowChoose() {
 }
 
 $('#btn-friend').addEventListener('click', () => {
-  if (!net.connected) { toast('Нет соединения с сервером', 'err'); return; }
+  if (!net.connected) { toast(t('toast.no_conn'), 'err'); return; }
   friendShowChoose();
   friendModal.classList.remove('hidden');
   $('#room-code-input').value = '';
@@ -92,7 +122,7 @@ $('#btn-room-create').addEventListener('click', () => {
 
 function joinRoomByCode(code) {
   code = String(code || '').toUpperCase().trim();
-  if (code.length !== 4) { $('#friend-error').textContent = 'Код — 4 символа'; return; }
+  if (code.length !== 4) { $('#friend-error').textContent = t('toast.code_len'); return; }
   $('#friend-error').textContent = '';
   net.send({ t: 'joinRoom', code, name: myName() });
 }
@@ -115,7 +145,7 @@ net.on('roomCreated', (msg) => {
 });
 
 net.on('roomError', (msg) => {
-  $('#friend-error').textContent = msg.reason || 'Не удалось войти в комнату';
+  $('#friend-error').textContent = trError(msg.reason) || t('toast.code_len');
   friendShowChoose();
   friendModal.classList.remove('hidden');
 });
@@ -126,12 +156,44 @@ $('#btn-copy-link').addEventListener('click', async () => {
   const link = $('#friend-link').value;
   try {
     await navigator.clipboard.writeText(link);
-    $('#copy-done').textContent = 'Ссылка скопирована — отправьте её другу';
+    $('#copy-done').textContent = t('friend.copied');
   } catch {
     $('#friend-link').select();
-    $('#copy-done').textContent = 'Выделено — нажмите Ctrl+C';
+    $('#copy-done').textContent = t('friend.copy_manual');
   }
 });
+
+// ---------- Лидерборд ----------
+const lbModal = $('#lb-modal');
+$('#btn-leaderboard').addEventListener('click', () => {
+  lbModal.classList.remove('hidden');
+  $('#lb-me').textContent = '…';
+  $('#lb-table').innerHTML = '';
+  net.send({ t: 'leaderboard' });
+});
+$('#btn-lb-close').addEventListener('click', () => lbModal.classList.add('hidden'));
+
+net.on('leaderboard', (msg) => {
+  // Отправляем свой рейтинг в нативный лидерборд Яндекса при каждом обновлении.
+  if (msg.me && typeof msg.me.rating === 'number') Ya.submitScore(msg.me.rating);
+  if (lbModal.classList.contains('hidden')) return; // фоновое обновление после матча
+  if (msg.disabled) {
+    $('#lb-me').textContent = t('lb.disabled');
+    $('#lb-table').innerHTML = '';
+    return;
+  }
+  $('#lb-me').textContent = msg.me ? t('lb.you', msg.me.rank, msg.me.rating) : t('lb.you_none');
+  const rows = (msg.top || []).map((p, i) => {
+    const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1);
+    const meCls = msg.me && msg.me.rank === i + 1 && msg.me.name === p.name ? ' class="me-row"' : '';
+    return `<tr${meCls}><td class="medal">${medal}</td><td>${escapeHtml(p.name)}</td><td>${p.rating}</td><td>${p.wins}</td></tr>`;
+  }).join('');
+  $('#lb-table').innerHTML = rows
+    ? `<tr><th>${t('lb.rank')}</th><th>${t('lb.player')}</th><th>${t('lb.rating')}</th><th>${t('lb.wins')}</th></tr>` + rows
+    : `<tr><td style="color:var(--muted)">${t('lb.empty')}</td></tr>`;
+});
+
+function escapeHtml(s) { return String(s).replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c])); }
 
 // Пришли по ссылке-приглашению (?room=XXXX): входим сразу после подключения (см. обработчик _open).
 let inviteCode = new URLSearchParams(location.search).get('room');
@@ -184,7 +246,7 @@ let inviteCode = new URLSearchParams(location.search).get('room');
 // ---------- Сеть ----------
 const connStatus = $('#conn-status');
 net.on('_open', () => {
-  connStatus.textContent = '● сервер онлайн';
+  connStatus.textContent = t('conn.online');
   connStatus.className = 'conn-status ok';
   // Автовход по ссылке-приглашению (однократно).
   if (inviteCode) {
@@ -194,7 +256,7 @@ net.on('_open', () => {
     joinRoomByCode(code);
   }
 });
-net.on('_close', () => { connStatus.textContent = '● переподключение…'; connStatus.className = 'conn-status err'; });
+net.on('_close', () => { connStatus.textContent = t('conn.reconnect'); connStatus.className = 'conn-status err'; });
 
 let queueTimer = null, queueStart = 0;
 net.on('queued', (msg) => {
@@ -207,10 +269,10 @@ net.on('queued', (msg) => {
     $('#queue-seconds').textContent = sec;
     const hint = $('#queue-hint');
     if (sec >= fallback - 3 && sec < fallback) {
-      hint.textContent = 'Живых соперников не видно… готовим достойного бота';
+      hint.textContent = t('queue.hint2');
       hint.classList.add('warn');
     } else if (sec < fallback - 3) {
-      hint.textContent = 'Ищем достойного соперника среди игроков';
+      hint.textContent = t('queue.hint1');
       hint.classList.remove('warn');
     }
   }, 250);
@@ -230,8 +292,8 @@ net.on('matchStart', (data) => {
   buildShop();
   ui.placing = null; ui.selectedBuilding = null; ui.balance = gs.balance;
   const enemyMeta = data.players[1 - data.yourSlot];
-  $('#hud-my-name').textContent = data.players[data.yourSlot].name + ' (вы)';
-  $('#hud-enemy-name').textContent = enemyMeta.name;
+  $('#hud-my-name').textContent = data.players[data.yourSlot].name + t('hud.you');
+  $('#hud-enemy-name').textContent = trPlayerName(enemyMeta.name);
   endShown = false;
   Ya.hideBanner();     // прячем баннер во время боя
   Ya.gameplayStart();  // активный геймплей — для корректной паузы рекламы
@@ -247,20 +309,20 @@ net.on('snap', (msg) => {
     if (lastPhase !== null && !msg.s.over) {
       if (ph === 'battle') {
         stopPlacing();
-        toast('⚔ Бой! Войска выходят', 'info');
+        toast(t('toast.battle'), 'info');
       } else {
         const me = msg.s.players[gs.mySlot];
-        toast(`Раунд ${msg.s.round} · +${me ? me.income : ''} ◉ — планируйте!`, 'info');
+        toast(t('toast.round', msg.s.round, me ? me.income : ''), 'info');
       }
     }
     lastPhase = ph;
   }
 });
 
-net.on('reject', (msg) => toast(msg.reason, 'err'));
+net.on('reject', (msg) => toast(trError(msg.reason), 'err'));
 
 net.on('hello', (msg) => {
-  if (msg.reattached) toast('Вы вернулись в бой!', 'info');
+  if (msg.reattached) toast(t('toast.reconnected'), 'info');
 });
 
 net.connect();
@@ -293,7 +355,7 @@ function shopButton(kind, key, spec, colors) {
   btn.dataset.kind = kind; btn.dataset.key = key;
   const icon = document.createElement('div'); icon.className = 'icon';
   icon.appendChild(makeIcon(kind === 'unit' ? 'unit' : 'building', key, colors));
-  const name = document.createElement('div'); name.className = 'name'; name.textContent = spec.name;
+  const name = document.createElement('div'); name.className = 'name'; name.textContent = kind === 'unit' ? unitName(key, spec.name) : bldName(key, spec.name);
   const cost = document.createElement('div'); cost.className = 'cost';
   cost.textContent = spec.cost + (kind === 'unit' ? ` ×${spec.pack}` : '');
   const hk = document.createElement('div'); hk.className = 'hotkey'; hk.textContent = (spec.hotkey || '').toUpperCase();
@@ -326,20 +388,18 @@ function shopButton(kind, key, spec, colors) {
 function inPlanPhase() { return gs.curr && gs.curr.phase === 'plan'; }
 
 function orderUnits(key) {
-  if (!inPlanPhase()) { toast('Заказ юнитов — только в фазе планирования'); return; }
+  if (!inPlanPhase()) { toast(t('toast.units_plan_only')); return; }
   net.send({ t: 'spawn', unit: key });
 }
 
 function startPlacing(key) {
-  if (!inPlanPhase()) { toast('Строить можно только в фазе планирования'); return; }
+  if (!inPlanPhase()) { toast(t('toast.build_plan_only')); return; }
   ui.placing = { type: key, cx: null, cy: null, valid: false };
   ui.selectedBuilding = null;
   $('#selection-panel').classList.add('hidden');
   canvas.classList.add('placing');
   const hint = $('#placement-hint');
-  hint.textContent = IS_TOUCH
-    ? 'Тапните по горам на своей половине, затем «✓ Построить»'
-    : 'Стройте на горах · ЛКМ — построить · ПКМ / Esc — отмена';
+  hint.textContent = IS_TOUCH ? t('place.hint_touch') : t('place.hint_desktop');
   hint.classList.remove('hidden');
   document.querySelectorAll('.shop-btn').forEach(b => b.classList.toggle('active', b.dataset.key === key && b.dataset.kind === 'building'));
   updatePlaceBar();
@@ -377,21 +437,24 @@ function placementValid(type, cx, cy) {
 const tooltipEl = $('#tooltip');
 function showTooltip(el, kind, key, spec) {
   const rows = [];
-  if (kind === 'unit') {
-    rows.push(`HP ${spec.hp} · Урон ${spec.dmg}${spec.bonusVsBuildings > 1 ? ` (×${spec.bonusVsBuildings} по базе)` : ''}`);
-    rows.push(`Скорость ${spec.speed} · Дальность ${spec.range}${spec.armor ? ` · Броня ${spec.armor}` : ''}`);
-    if (spec.healPerSec) rows.push(`Лечение ${spec.healPerSec}/с в радиусе ${spec.healRadius}`);
-    rows.push(`Пачка: ${spec.pack} шт.`);
+  const isUnit = kind === 'unit';
+  const name = isUnit ? unitName(key, spec.name) : bldName(key, spec.name);
+  const desc = isUnit ? unitDesc(key, spec.desc) : bldDesc(key, spec.desc);
+  if (isUnit) {
+    rows.push(`${t('tt.hp')} ${spec.hp} · ${t('tt.dmg')} ${spec.dmg}${spec.bonusVsBuildings > 1 ? t('tt.vs_base', spec.bonusVsBuildings) : ''}`);
+    rows.push(`${t('tt.speed')} ${spec.speed} · ${t('tt.range')} ${spec.range}${spec.armor ? ` · ${t('tt.armor')} ${spec.armor}` : ''}`);
+    if (spec.healPerSec) rows.push(`${t('tt.heal', spec.healPerSec)} ${t('tt.heal_r', spec.healRadius)}`);
+    rows.push(t('tt.pack', spec.pack));
   } else {
-    rows.push(`HP ${spec.hp}`);
-    if (spec.dmg) rows.push(`Урон ${spec.dmg} · Скорострельность ${spec.attackRate}/с · Радиус ${spec.range}`);
-    if (spec.splash) rows.push(`Площадь взрыва: ${spec.splash}`);
-    if (spec.slowFactor) rows.push(`Замедление ${Math.round(spec.slowFactor * 100)}% на ${spec.slowDuration}с`);
-    if (spec.incomePerRound) rows.push(`Доход +${spec.incomePerRound} за раунд`);
-    if (spec.incomeMult) rows.push(`Доход +${Math.round(spec.incomeMult * 100)}%${spec.maxCount ? ` · максимум ${spec.maxCount}` : ''}`);
+    rows.push(`${t('tt.hp')} ${spec.hp}`);
+    if (spec.dmg) rows.push(`${t('tt.dmg')} ${spec.dmg} · ${t('tt.firerate', spec.attackRate)} · ${t('tt.radius', spec.range)}`);
+    if (spec.splash) rows.push(t('tt.splash', spec.splash));
+    if (spec.slowFactor) rows.push(t('tt.slow', Math.round(spec.slowFactor * 100), spec.slowDuration));
+    if (spec.incomePerRound) rows.push(t('tt.income', spec.incomePerRound));
+    if (spec.incomeMult) rows.push(t('tt.income_mult', Math.round(spec.incomeMult * 100)) + (spec.maxCount ? ` · ${t('tt.max', spec.maxCount)}` : ''));
   }
-  tooltipEl.innerHTML = `<div class="t-name">${spec.name} <span class="t-cost">◉ ${spec.cost}</span></div>
-    <div class="t-desc">${spec.desc}</div>
+  tooltipEl.innerHTML = `<div class="t-name">${name} <span class="t-cost">◉ ${spec.cost}</span></div>
+    <div class="t-desc">${desc}</div>
     <div class="t-stats">${rows.join('<br>')}</div>`;
   tooltipEl.classList.remove('hidden');
   const r = el.getBoundingClientRect();
@@ -651,7 +714,7 @@ if (fsSupported) {
 function tryBuild() {
   const p = ui.placing;
   if (!p || p.cx === null) return;
-  if (!p.valid) { toast('Здесь строить нельзя'); return; }
+  if (!p.valid) { toast(t('toast.cant_here')); return; }
   net.send({ t: 'build', type: p.type, x: p.cx, y: p.cy });
   // Shift — серийное строительство.
   if (!keys.has('shift')) stopPlacing();
@@ -661,7 +724,7 @@ function tryBuild() {
 function confirmMobilePlacement() {
   const p = ui.placing;
   if (!p || p.cx === null) return;
-  if (!p.valid) { toast('Здесь строить нельзя'); return; }
+  if (!p.valid) { toast(t('toast.cant_here')); return; }
   net.send({ t: 'build', type: p.type, x: p.cx, y: p.cy });
   // На мобиле остаёмся в режиме стройки (серийное строительство), выход — кнопка ✕.
   p.cx = null; p.cy = null; p.valid = false;
@@ -684,10 +747,10 @@ $('#btn-place-cancel').addEventListener('click', stopPlacing);
 function selectBuilding(b) {
   ui.selectedBuilding = b[0];
   const spec = gs.balance.buildings[b[2]];
-  $('#sel-title').textContent = spec.name;
+  $('#sel-title').textContent = bldName(b[2], spec.name);
   const refund = Math.floor(spec.cost * gs.balance.economy.refundRatio * (b[5] / 100));
-  $('#sel-info').innerHTML = `Прочность: ${b[5]}%<br>${spec.desc}`;
-  $('#btn-sell').textContent = `Продать за ◉ ${refund}`;
+  $('#sel-info').innerHTML = `${t('sel.integrity')}: ${b[5]}%<br>${bldDesc(b[2], spec.desc)}`;
+  $('#btn-sell').textContent = t('sel.sell_for', refund);
   $('#selection-panel').classList.remove('hidden');
 }
 $('#btn-sell').addEventListener('click', () => {
@@ -726,7 +789,7 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keyup', (e) => keys.delete(physKey(e)));
 
 $('#btn-surrender').addEventListener('click', () => {
-  if (confirm('Сдаться и покинуть бой?')) net.send({ t: 'surrender' });
+  if (confirm(t('confirm_surrender'))) net.send({ t: 'surrender' });
 });
 
 // ---------- HUD ----------
@@ -736,22 +799,22 @@ function updateHud(now) {
   lastHudUpdate = now;
   const me = gs.me(), enemy = gs.enemy();
   $('#hud-gold').textContent = me.gold;
-  $('#hud-income').textContent = `+${me.income} за раунд`;
-  const t = Math.max(0, gs.curr.time | 0);
-  const mm = String((t / 60) | 0).padStart(2, '0'), ss = String(t % 60).padStart(2, '0');
+  $('#hud-income').textContent = t('hud.income', me.income);
+  const sec = Math.max(0, gs.curr.time | 0);
+  const mm = String((sec / 60) | 0).padStart(2, '0'), ss = String(sec % 60).padStart(2, '0');
   const timerEl = $('#hud-timer');
   timerEl.textContent = `${mm}:${ss}`;
   const sdAt = gs.balance.match.suddenDeathAtSec;
-  timerEl.classList.toggle('warn', t > sdAt - 60 && t < sdAt);
+  timerEl.classList.toggle('warn', sec > sdAt - 60 && sec < sdAt);
   $('#hud-sd').classList.toggle('hidden', !gs.curr.sd);
   // Фазовый баннер: планирование с обратным отсчётом / бой.
   const phaseEl = $('#hud-phase');
   if (gs.curr.phase === 'plan') {
     const left = Math.max(0, Math.ceil(gs.curr.planLeft));
-    phaseEl.textContent = `Раунд ${gs.curr.round} · планирование 0:${String(left).padStart(2, '0')}`;
+    phaseEl.textContent = t('hud.phase_plan', gs.curr.round, String(left).padStart(2, '0'));
     phaseEl.className = 'hud-phase plan' + (left <= 5 ? ' urgent' : '');
   } else {
-    phaseEl.textContent = `⚔ Раунд ${gs.curr.round} · БОЙ`;
+    phaseEl.textContent = t('hud.phase_battle', gs.curr.round);
     phaseEl.className = 'hud-phase battle';
   }
   updateQueueRow();
@@ -783,7 +846,7 @@ function updateQueueRow() {
   row.innerHTML = '';
   const entries = Object.entries(q);
   if (!entries.length) {
-    row.innerHTML = `<span class="queue-empty">${gs.curr.phase === 'plan' ? 'очередь пуста' : 'войска в бою'}</span>`;
+    row.innerHTML = `<span class="queue-empty">${gs.curr.phase === 'plan' ? t('chip.empty_plan') : t('chip.empty_battle')}</span>`;
     return;
   }
   for (const [type, count] of entries) {
@@ -791,8 +854,8 @@ function updateQueueRow() {
     if (!spec) continue;
     const chip = document.createElement('span');
     chip.className = 'queue-chip';
-    chip.title = `Убрать пачку (${spec.name}) — вернёт ◉ ${spec.cost}`;
-    chip.innerHTML = `${spec.name} ×${count} <span class="x">✕</span>`;
+    chip.title = t('chip.remove', unitName(type, spec.name), spec.cost);
+    chip.innerHTML = `${unitName(type, spec.name)} ×${count} <span class="x">✕</span>`;
     chip.addEventListener('click', () => net.send({ t: 'unqueue', unit: type }));
     row.appendChild(chip);
   }
@@ -809,26 +872,28 @@ function maybeShowEnd() {
     const meWon = gs.winner === gs.mySlot;
     const draw = gs.winner === null || gs.winner === undefined;
     const title = $('#end-title');
-    title.textContent = draw ? 'Ничья' : meWon ? '⚔ ПОБЕДА!' : 'Поражение';
+    title.textContent = draw ? t('end.draw') : meWon ? t('end.win') : t('end.lose');
     title.className = draw ? 'draw' : meWon ? 'win' : 'lose';
     const reasons = {
-      base: draw ? 'Обе базы пали одновременно' : meWon ? 'Вражеская база уничтожена!' : 'Ваша база уничтожена',
-      surrender: meWon ? 'Противник сдался' : 'Вы сдались',
-      disconnect: meWon ? 'Противник покинул бой' : 'Потеряно соединение',
-      timeout: 'Время вышло — победил владелец более крепкой базы',
-      draw: 'Абсолютное равенство сил',
-      admin: 'Матч остановлен администратором',
+      base: draw ? t('end.r_base_d') : meWon ? t('end.r_base_w') : t('end.r_base_l'),
+      surrender: meWon ? t('end.r_surr_w') : t('end.r_surr_l'),
+      disconnect: meWon ? t('end.r_disc_w') : t('end.r_disc_l'),
+      timeout: t('end.r_timeout'),
+      draw: t('end.r_draw'),
+      admin: t('end.r_admin'),
     };
     $('#end-reason').textContent = reasons[gs.reason] || '';
     const me = gs.me(), enemy = gs.enemy();
-    const t = gs.curr.time | 0;
+    const sec = gs.curr.time | 0;
     $('#end-stats').innerHTML = `
-      <tr><th></th><th>Вы</th><th>Противник</th></tr>
-      <tr><td>Убито врагов</td><td>${me.kills}</td><td>${enemy.kills}</td></tr>
-      <tr><td>Потеряно бойцов</td><td>${me.losses}</td><td>${enemy.losses}</td></tr>
-      <tr><td>HP базы</td><td>${me.baseHp}</td><td>${enemy.baseHp}</td></tr>
-      <tr><td>Длительность</td><td colspan="2">${(t / 60) | 0} мин ${t % 60} c</td></tr>`;
+      <tr><th></th><th>${t('end.st_you')}</th><th>${t('end.st_enemy')}</th></tr>
+      <tr><td>${t('end.st_kills')}</td><td>${me.kills}</td><td>${enemy.kills}</td></tr>
+      <tr><td>${t('end.st_losses')}</td><td>${me.losses}</td><td>${enemy.losses}</td></tr>
+      <tr><td>${t('end.st_hp')}</td><td>${me.baseHp}</td><td>${enemy.baseHp}</td></tr>
+      <tr><td>${t('end.st_dur')}</td><td colspan="2">${t('end.st_dur_val', (sec / 60) | 0, sec % 60)}</td></tr>`;
     showScreen('#screen-end');
+    // Отправляем рейтинг в нативный лидерборд Яндекса (после обновления на сервере).
+    setTimeout(() => net.send({ t: 'leaderboard' }), 800);
   }, 1400);
 }
 

@@ -90,6 +90,15 @@ export const Ya = {
     return out;
   },
 
+  // Нативный лидерборд Яндекса: отправляем рейтинг (лидерборд 'rating'
+  // нужно создать в Консоли разработчика; без него вызов молча игнорируется).
+  submitScore(score) {
+    if (!this.sdk || !isFinite(score)) return;
+    this.sdk.getLeaderboards()
+      .then(lb => lb.setLeaderboardScore('rating', Math.max(0, Math.round(score))))
+      .catch(() => {});
+  },
+
   // ---------- Простая шина событий паузы ----------
   _handlers: { pause: [], resume: [] },
   on(ev, fn) { if (this._handlers[ev]) this._handlers[ev].push(fn); },

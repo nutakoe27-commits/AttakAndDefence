@@ -181,6 +181,23 @@ async function waitFor(fn, timeoutMs, what) {
       }
     }
 
+    console.log('6.7. Лидерборд');
+    {
+      // c1 выиграл матч (сдача c2 в секции 5) — должен попасть в рейтинг.
+      let lbMsg = null;
+      c1.msgs.length = 0;
+      send(c1, { t: 'leaderboard' });
+      await waitFor(() => (lbMsg = c1.msgs.find(m => m.t === 'leaderboard')), 3000, 'ответ лидерборда');
+      if (lbMsg.disabled) {
+        check(true, 'лидерборд в no-op (нет sqlite) — не ошибка');
+      } else {
+        check(Array.isArray(lbMsg.top) && lbMsg.top.length >= 2, `в топе есть игроки (${lbMsg.top.length})`);
+        check(lbMsg.me && lbMsg.me.rank >= 1 && typeof lbMsg.me.rating === 'number', `свой ранг: #${lbMsg.me.rank}, рейтинг ${lbMsg.me.rating}`);
+        const winner = lbMsg.top.find(p => p.name === 'Аня');
+        check(!!winner && winner.rating > 1000, 'победитель получил рейтинг > 1000');
+      }
+    }
+
     console.log('7. Приватные комнаты (игра с другом)');
     const h1 = await wsClient('Хост');
     const h2 = await wsClient('Друг');

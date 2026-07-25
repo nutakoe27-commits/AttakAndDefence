@@ -14,18 +14,20 @@
 <div id="screen-menu" class="screen active">
   <div class="menu-bg" id="menu-bg-canvas-wrap"><canvas id="menu-bg"></canvas></div>
   <div class="menu-card">
+    <button id="btn-lang" class="btn btn-ghost btn-small lang-btn" title="Язык / Language">🌐 RU</button>
     <div class="logo">
       <div class="logo-swords">⚔</div>
       <h1>ATTACK <span>&amp;</span> DEFENCE</h1>
-      <div class="logo-sub">PvP tower defense на процедурных картах</div>
+      <div class="logo-sub" data-i18n="menu.sub">PvP tower defense на процедурных картах</div>
     </div>
     <div class="menu-form">
-      <label for="player-name">Ваше имя</label>
+      <label for="player-name" data-i18n="menu.name_label">Ваше имя</label>
       <input id="player-name" maxlength="20" placeholder="Полководец" autocomplete="off">
-      <button id="btn-play" class="btn btn-primary btn-big">⚔ В БОЙ</button>
-      <button id="btn-friend" class="btn">👥 Играть с другом</button>
-      <button id="btn-howto" class="btn btn-ghost">Как играть</button>
-      <button id="btn-fullscreen-menu" class="btn btn-ghost hidden">⛶ На весь экран</button>
+      <button id="btn-play" class="btn btn-primary btn-big" data-i18n="menu.play">⚔ В БОЙ</button>
+      <button id="btn-friend" class="btn" data-i18n="menu.friend">👥 Играть с другом</button>
+      <button id="btn-leaderboard" class="btn btn-ghost" data-i18n="menu.leaderboard">🏆 Лидерборд</button>
+      <button id="btn-howto" class="btn btn-ghost" data-i18n="menu.howto">Как играть</button>
+      <button id="btn-fullscreen-menu" class="btn btn-ghost hidden" data-i18n="menu.fullscreen">⛶ На весь экран</button>
     </div>
     <div class="menu-footer">
       <span id="conn-status" class="conn-status">подключение…</span>
@@ -37,10 +39,10 @@
 <div id="screen-queue" class="screen">
   <div class="queue-card">
     <div class="queue-spinner"></div>
-    <h2>Поиск противника…</h2>
-    <div class="queue-time"><span id="queue-seconds">0</span> сек</div>
+    <h2 data-i18n="queue.title">Поиск противника…</h2>
+    <div class="queue-time"><span id="queue-seconds">0</span> <span data-i18n="queue.sec">сек</span></div>
     <div class="queue-hint" id="queue-hint">Ищем достойного соперника среди игроков</div>
-    <button id="btn-cancel-queue" class="btn btn-ghost">Отмена</button>
+    <button id="btn-cancel-queue" class="btn btn-ghost" data-i18n="queue.cancel">Отмена</button>
   </div>
 </div>
 
@@ -72,17 +74,17 @@
   <!-- Нижняя панель -->
   <div id="hud-bottom">
     <div class="hud-group" id="units-panel">
-      <div class="hud-group-title">Юниты <span class="hint">(выйдут в начале боя)</span></div>
+      <div class="hud-group-title" data-i18n="hud.units_title">Юниты <span class="hint">(выйдут в начале боя)</span></div>
       <div id="queue-row"></div>
       <div class="hud-buttons" id="unit-buttons"></div>
     </div>
     <div class="hud-group" id="build-panel">
-      <div class="hud-group-title">Постройки <span class="hint">(на своей половине)</span></div>
+      <div class="hud-group-title" data-i18n="hud.buildings_title">Постройки <span class="hint">(на своей половине)</span></div>
       <div class="hud-buttons" id="build-buttons"></div>
     </div>
     <div class="hud-group hud-group-misc">
-      <button id="btn-fullscreen" class="btn btn-small hidden" title="На весь экран">⛶</button>
-      <button id="btn-surrender" class="btn btn-danger btn-small" title="Сдаться">🏳</button>
+      <button id="btn-fullscreen" class="btn btn-small hidden">⛶</button>
+      <button id="btn-surrender" class="btn btn-danger btn-small">🏳</button>
     </div>
   </div>
 
@@ -99,8 +101,8 @@
 
   <!-- Мобильное подтверждение стройки: на тачах нет ховера, ставим призрак тапом -->
   <div id="mobile-place-bar" class="hidden">
-    <button id="btn-place-ok" class="btn btn-primary">✓ Построить</button>
-    <button id="btn-place-cancel" class="btn btn-danger">✕</button>
+    <button id="btn-place-ok" class="btn btn-primary" data-i18n="place.build">✓ Построить</button>
+    <button id="btn-place-cancel" class="btn btn-danger" data-i18n="place.cancel">✕</button>
   </div>
 </div>
 
@@ -110,7 +112,17 @@
     <h2 id="end-title">Победа!</h2>
     <div id="end-reason"></div>
     <table class="end-stats" id="end-stats"></table>
-    <button id="btn-back-menu" class="btn btn-primary">В главное меню</button>
+    <button id="btn-back-menu" class="btn btn-primary" data-i18n="end.back">В главное меню</button>
+  </div>
+</div>
+
+<!-- Лидерборд -->
+<div id="lb-modal" class="modal hidden">
+  <div class="modal-card lb-card">
+    <h2 data-i18n="lb.title">🏆 Лидерборд</h2>
+    <div id="lb-me" class="lb-me"></div>
+    <div class="table-wrap lb-wrap"><table id="lb-table"></table></div>
+    <button id="btn-lb-close" class="btn btn-primary" data-i18n="lb.close">Закрыть</button>
   </div>
 </div>
 
@@ -121,8 +133,8 @@
     <div id="tutorial-step-num"></div>
     <div id="tutorial-text"></div>
     <div class="tut-buttons">
-      <button id="btn-tut-skip" class="btn btn-ghost btn-small">Пропустить обучение</button>
-      <button id="btn-tut-next" class="btn btn-primary btn-small">Далее →</button>
+      <button id="btn-tut-skip" class="btn btn-ghost btn-small" data-i18n="tut.skip">Пропустить обучение</button>
+      <button id="btn-tut-next" class="btn btn-primary btn-small" data-i18n="tut.next">Далее →</button>
     </div>
   </div>
 </div>
@@ -130,15 +142,15 @@
 <!-- Игра с другом -->
 <div id="friend-modal" class="modal hidden">
   <div class="modal-card friend-card">
-    <h2>Игра с другом</h2>
+    <h2 data-i18n="friend.title">Игра с другом</h2>
 
     <!-- Выбор: создать или войти -->
     <div id="friend-choose">
-      <button id="btn-room-create" class="btn btn-primary btn-big friend-wide">Создать комнату</button>
-      <div class="friend-divider">или войдите по коду от друга</div>
+      <button id="btn-room-create" class="btn btn-primary btn-big friend-wide" data-i18n="friend.create">Создать комнату</button>
+      <div class="friend-divider" data-i18n="friend.or">или войдите по коду от друга</div>
       <div class="friend-join-row">
         <input id="room-code-input" maxlength="4" placeholder="КОД" autocomplete="off" spellcheck="false">
-        <button id="btn-room-join" class="btn btn-primary">Войти</button>
+        <button id="btn-room-join" class="btn btn-primary" data-i18n="friend.join">Войти</button>
       </div>
       <div id="friend-error" class="friend-error"></div>
     </div>
@@ -146,9 +158,9 @@
     <!-- Ожидание друга -->
     <div id="friend-wait" class="hidden">
       <div class="queue-spinner small"></div>
-      <div class="friend-wait-text">Ждём друга…</div>
+      <div class="friend-wait-text" data-i18n="friend.wait">Ждём друга…</div>
       <div class="friend-code" id="friend-code">····</div>
-      <div class="friend-hint">Продиктуйте код или отправьте ссылку:</div>
+      <div class="friend-hint" data-i18n="friend.hint">Продиктуйте код или отправьте ссылку:</div>
       <div class="friend-link-row">
         <input id="friend-link" readonly>
         <button id="btn-copy-link" class="btn">📋</button>
@@ -156,15 +168,15 @@
       <div id="copy-done" class="friend-copied"></div>
     </div>
 
-    <button id="btn-friend-close" class="btn btn-ghost">Закрыть</button>
+    <button id="btn-friend-close" class="btn btn-ghost" data-i18n="friend.close">Закрыть</button>
   </div>
 </div>
 
 <!-- Как играть -->
 <div id="howto-modal" class="modal hidden">
   <div class="modal-card">
-    <h2>Как играть</h2>
-    <div class="howto-grid">
+    <h2 data-i18n="howto.title">Как играть</h2>
+    <div class="howto-grid" id="howto-grid">
       <div><b>🎯 Цель.</b> Уничтожьте вражескую базу раньше, чем уничтожат вашу. Игра идёт <b>раундами</b>: 20 секунд планирования → бой до гибели всех войск. После 10:30 — «внезапная смерть»: базы разрушаются сами.</div>
       <div><b>🕵 Скрытность.</b> Во время планирования <b>противника не видно</b>: его новые постройки и армия раскрываются только в момент выхода войск. Просчитывайте, чего ждать, — и блефуйте сами.</div>
       <div><b>◉ Экономика.</b> Золото выдаётся разом <b>в начале каждого раунда</b>. <b>Шахты</b> добавляют к выплате, <b>банки</b> умножают её. Вложение в экономику окупается через пару раундов — решайте, когда копить, а когда давить.</div>
@@ -174,7 +186,7 @@
       <div><b>⌨ Управление.</b> ПК: перетаскивание/стрелки — камера, колесо — зум, клавиши 1–6 — юниты, Q W E R T — постройки, Esc — отмена. Телефон (горизонтально): палец — камера, щипок — зум, тап по горе + «✓ Построить», долгое нажатие на кнопку — описание.</div>
       <div><b>👥 С другом.</b> Кнопка «Играть с другом»: создайте комнату и отправьте другу код или ссылку — он попадёт прямо к вам в матч. Кнопка «В бой» ищет случайного соперника (или бота через 20 секунд).</div>
     </div>
-    <button id="btn-howto-close" class="btn btn-primary">Понятно</button>
+    <button id="btn-howto-close" class="btn btn-primary" data-i18n="howto.ok">Понятно</button>
   </div>
 </div>
 
@@ -182,7 +194,7 @@
 <div id="rotate-overlay" class="hidden">
   <div class="rotate-inner">
     <div class="rotate-icon">📱⟳</div>
-    <div>Поверните телефон горизонтально</div>
+    <div data-i18n="rotate">Поверните телефон горизонтально</div>
   </div>
 </div>
 

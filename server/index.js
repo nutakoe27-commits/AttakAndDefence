@@ -127,6 +127,16 @@ wss.on('connection', (ws) => {
         if (ref && ref.runner.match.over) lobby.byToken.delete(ws.playerToken);
         break;
       }
+      case 'leaderboard': {
+        const db = require('./db');
+        if (!db.enabled) { ws.send(JSON.stringify({ t: 'leaderboard', disabled: true, top: [], me: null })); break; }
+        ws.send(JSON.stringify({
+          t: 'leaderboard',
+          top: db.topPlayers(50),
+          me: ws.playerToken ? db.playerRank(ws.playerToken) : null,
+        }));
+        break;
+      }
       case 'ping':
         ws.send(JSON.stringify({ t: 'pong', now: Date.now() }));
         break;

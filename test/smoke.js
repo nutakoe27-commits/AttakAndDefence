@@ -220,6 +220,22 @@ console.log('3б. Юниты не застревают в скалах, цели
   }
 }
 
+console.log('3в. Прогрессивное усиление юнитов по раундам');
+{
+  const bal = balance.loadDefault();
+  const m = new Match('grow', bal, [{ name: 'A' }, { name: 'B' }], 11);
+  m.players[0].gold = 10000;
+  m.round = 6; // имитируем поздний раунд
+  m.spawnUnits(0, 'soldier');
+  m.planLeft = 0.01;
+  m.step(); m.step();
+  const grown = m.units.find(u => u.type === 'soldier');
+  const expMul = 1 + bal.match.unitHpGrowthPerRound * 5;
+  check(Math.abs(grown.hpMax - bal.units.soldier.hp * expMul) < 0.01,
+    `HP юнита 6-го раунда: ${Math.round(grown.hpMax)} (базовый ${bal.units.soldier.hp}, x${expMul.toFixed(2)})`);
+  check(Math.abs((grown.dmgMul || 1) - (1 + bal.match.unitDmgGrowthPerRound * 5)) < 0.01, 'множитель урона растёт по раундам');
+}
+
 console.log('4. Бот против бота — полный матч (ускоренно)');
 {
   const bal = balance.loadDefault();
