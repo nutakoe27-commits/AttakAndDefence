@@ -145,22 +145,83 @@ ufw enable
 
 ## 8. Обновление версии
 
+> `$APP` ниже — каталог приложения. Если ставили по инструкции — это
+> `/opt/attackdefence/app` (команды через `sudo -u gameadmin`). Если запускаете
+> под root из `/root/app` — это `/root/app` (без `sudo -u gameadmin`).
+
+### 8.1. Обычное обновление (рутинное)
+
 ```bash
-cd /opt/attackdefence/app
-sudo -u gameadmin git pull
-sudo -u gameadmin npm ci --omit=dev
+cd $APP
+git pull
+npm ci --omit=dev            # зависимостей почти нет (только ws), пройдёт быстро
 systemctl restart attackdefence
+systemctl status attackdefence --no-pager     # active (running)
 ```
 
-Правки баланса из админки хранятся в `server/config/balance.custom.json`
-(файл в `.gitignore`) — обновления кода их не затирают. Этот файл стоит включить
-в бэкапы, если настраиваете их.
+Правки баланса из админки (`server/config/balance.custom.json`) и база статистики
+(`server/data/stats.db`) — в `.gitignore`, `git pull` их не трогает.
 
-**Статистика.** База статистики матчей лежит в `server/config/../data/stats.db`
-(`server/data/stats.db`, в `.gitignore`). Для неё нужен **Node ≥ 22.5** (встроенный
-`node:sqlite`, без зависимостей). На более старом Node статистика молча отключается,
-игра работает как обычно. Включите `server/data/` и `balance.custom.json` в бэкапы.
-Аналитика доступна в админке на вкладке «Аналитика».
+### 8.2. Первое обновление на новую версию — три доп. шага
+
+Это обновление принесло **новую схему баланса** (переименованы поля экономики,
+убрана баррикада, добавлены прогрессивное усиление юнитов и др.), **статистику**,
+**лидерборд** и **локализацию**. Поэтому один раз выполните дополнительно:
+
+**Шаг 1. Бэкап (на всякий случай).**
+```bash
+cd $APP
+cp -a server/config/balance.custom.json ~/balance-backup.json 2>/dev/null || true
+cp -a server/data ~/ad-data-backup 2>/dev/null || true
+git rev-parse HEAD > ~/ad-prev-commit.txt      # запомнить версию для отката
+```
+
+**Шаг 2. Node ≥ 22.5** — нужен для статистики и лидерборда (встроенный `node:sqlite`).
+```bash
+node -v      # если ниже v22.5 — обновите:
+curl -fsSL https://deb.nodesource.com/setup_24.x | bash -   # 24 LTS (или setup_25.x)
+apt-get install -y nodejs
+```
+
+**Шаг 3. Сбросить баланс к дефолту.** Старый `balance.custom.json` содержит поля
+прежней схемы (`baseIncome`, `income`, `barricade` …), которые новая версия не
+использует — из-за них экономика останется «вялой», как на старом балансе. Сброс:
+```bash
+rm -f $APP/server/config/balance.custom.json
+```
+(или после рестарта нажмите в админке **Баланс → «Сбросить к дефолту»**.)
+После сброса заново внесите нужные правки — уже в новых полях.
+
+Затем — обычный `git pull` + `restart` из 8.1.
+
+### 8.3. Проверка после обновления
+
+```bash
+journalctl -u attackdefence -n 30 --no-pager
+```
+В логах при старте должно быть:
+- `Attack & Defence — сервер запущен`
+- `[db] статистика включена: …/stats.db` — значит Node ≥ 22.5 и БД работает
+  (если вместо этого `node:sqlite недоступен` — обновите Node, шаг 2).
+
+Затем откройте игру и админку:
+- `http://ВАШ_IP/` — грузится, есть переключатель языка 🌐 и кнопка «🏆 Лидерборд».
+- `http://ВАШ_IP/admin` → вкладки **«Аналитика»** и **«Матчи»** открываются.
+- Сыграйте матч против бота — после него в «Аналитике» появятся цифры, в лидерборде — ваш рейтинг.
+
+### 8.4. Откат, если что-то сломалось
+
+```bash
+cd $APP
+git checkout $(cat ~/ad-prev-commit.txt)    # вернуться на прошлую версию
+npm ci --omit=dev
+systemctl restart attackdefence
+```
+Данные (`balance.custom.json`, `stats.db`) при откате не теряются — они вне git.
+
+**Статистика и бэкапы.** База матчей — `server/data/stats.db`, правки баланса —
+`server/config/balance.custom.json` (оба в `.gitignore`). Включите их в регулярные
+бэкапы. Аналитика и лидерборд — в админке.
 
 **Публикация в Яндекс Играх** — отдельная инструкция в [YANDEX.md](YANDEX.md):
 архитектура (статический клиент на Яндексе + этот бэкенд по `wss://`), обязательный
