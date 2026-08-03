@@ -172,19 +172,52 @@
     }
   },
   "bot": {
-    "difficulty": "medium",
     "actionIntervalSec": 2.0,
     "ecoWeightEarly": 0.65,
     "ecoWeightLate": 0.3,
-    "attackIntervalSec": [
-      22,
-      34
-    ],
     "defendThreshold": 5,
-    "aggressionRamp": 1.15,
-    "mistakeChance": 0.18
-  },
-  "matchmaking": {
-    "botFallbackSec": 20
+    "mistakeChance": 0.18,
+    "reserveBase": 0.18,
+    "reserveLate": 0.55,
+    "towerTopN": 4,
+    "waveBudget": 0.8,
+    "mineTarget": 9,
+    "defendChance": 0.7,
+    "difficulties": {
+      "easy": {
+        "actionIntervalSec": 3.4,
+        "mistakeChance": 0.42,
+        "reserveBase": 0.1,
+        "reserveLate": 0.28,
+        "towerTopN": 9,
+        "waveBudget": 0.55,
+        "mineTarget": 4,
+        "defendChance": 0.45,
+        "ecoWeightEarly": 0.5,
+        "ecoWeightLate": 0.25
+      },
+      "medium": {
+        "actionIntervalSec": 2.0,
+        "mistakeChance": 0.18,
+        "reserveBase": 0.18,
+        "reserveLate": 0.55,
+        "towerTopN": 4,
+        "waveBudget": 0.8,
+        "mineTarget": 9,
+        "defendChance": 0.7
+      },
+      "hard": {
+        "actionIntervalSec": 1.15,
+        "mistakeChance": 0.04,
+        "reserveBase": 0.3,
+        "reserveLate": 0.7,
+        "towerTopN": 2,
+        "waveBudget": 0.96,
+        "mineTarget": 7,
+        "defendChance": 0.92,
+        "ecoWeightEarly": 0.5,
+        "ecoWeightLate": 0.2
+      }
+    }
   }
 }

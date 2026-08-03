@@ -91,17 +91,19 @@ async function waitFor(fn, timeoutMs, what) {
     // Ускоряем раунды для дальнейших тестов (применится к новым матчам).
     await fetchJson('/api/admin/balance', { method: 'POST', headers: auth, body: { patch: { match: { planPhaseSec: 5, battleMinSec: 1 } } } });
 
-    console.log('3. PvP: два клиента находят друг друга');
+    console.log('3. Два человека в одном матче (через комнату)');
     const c1 = await wsClient('Аня');
     const c2 = await wsClient('Борис');
     await waitFor(() => c1.token && c2.token, 3000, 'hello');
-    send(c1, { t: 'queue', name: 'Аня' });
-    await sleep(300);
-    send(c2, { t: 'queue', name: 'Борис' });
+    send(c1, { t: 'createRoom', name: 'Аня' });
+    await waitFor(() => c1.msgs.some(m => m.t === 'roomCreated'), 3000, 'roomCreated');
+    const roomCode = c1.msgs.find(m => m.t === 'roomCreated').code;
+    send(c2, { t: 'joinRoom', code: roomCode, name: 'Борис' });
     await waitFor(() => c1.init && c2.init, 5000, 'matchStart');
     check(c1.init.matchId === c2.init.matchId, 'оба в одном матче');
     check(c1.init.yourSlot !== c2.init.yourSlot, 'слоты разные');
     check(c1.init.map.tiles.length === c1.init.map.w * c1.init.map.h, 'карта пришла');
+    check(c1.init.botMatch === false, 'матч с другом — не ботовый');
 
     console.log('4. Раунды: планирование, скрытность, бой');
     await waitFor(() => c1.snap, 3000, 'первый снапшот');
@@ -147,24 +149,31 @@ async function waitFor(fn, timeoutMs, what) {
     const hist = await fetchJson('/api/admin/matches', { headers: auth });
     check(hist.body.history.length === 1, 'матч попал в историю');
 
-    console.log('6. Бот-фоллбек (ускоренный)');
-    // Уменьшаем таймаут через админку, чтобы не ждать 20 секунд.
-    await fetchJson('/api/admin/balance', { method: 'POST', headers: auth, body: { patch: { matchmaking: { botFallbackSec: 2 } } } });
+    console.log('6. Матч с ботом (выбор сложности) + пауза на обучении + реконнект');
     const c3 = await wsClient('Соло');
     await waitFor(() => c3.token, 3000, 'hello c3');
-    send(c3, { t: 'queue', name: 'Соло' });
-    await waitFor(() => c3.init, 8000, 'бот-матч');
+    send(c3, { t: 'playBot', name: 'Соло', difficulty: 'hard' });
+    await waitFor(() => c3.init, 5000, 'бот-матч');
     const botPlayer = c3.init.players.find(p => p.isBot);
-    check(!!botPlayer, 'через 2с подставлен бот: ' + (botPlayer && botPlayer.name));
-    await waitFor(() => c3.snap && c3.snap.units.length >= 0 && c3.snap.time > 3, 8000, 'бот-матч идёт');
-    check(true, 'матч с ботом симулируется');
+    check(!!botPlayer, 'матч с ботом создан мгновенно: ' + (botPlayer && botPlayer.name));
+    check(c3.init.difficulty === 'hard', 'сложность передана боту: ' + c3.init.difficulty);
+    check(c3.init.botMatch === true, 'помечен как ботовый матч');
+    // Пауза на обучении: время матча замирает.
+    await waitFor(() => c3.snap && c3.snap.time > 0.5, 4000, 'матч идёт');
+    send(c3, { t: 'pauseMatch', on: true });
+    await sleep(400);
+    const tPause = c3.snap.time;
+    await sleep(900);
+    check(Math.abs(c3.snap.time - tPause) < 0.2, `на паузе время стоит (${tPause} ≈ ${c3.snap.time})`);
+    send(c3, { t: 'pauseMatch', on: false });
+    await sleep(600);
+    check(c3.snap.time > tPause + 0.3, 'после снятия паузы время снова идёт');
     // Реконнект: закрываем сокет, открываем новый с тем же токеном.
     const savedToken = c3.token;
     c3.ws.close();
     await sleep(500);
     const c4 = await wsClient('Соло');
     await waitFor(() => c4.token, 2000, 'hello c4');
-    // повторный hello с сохранённым токеном
     send(c4, { t: 'hello', token: savedToken, name: 'Соло' });
     await waitFor(() => c4.init, 4000, 'реконнект в матч');
     check(c4.init.matchId === c3.init.matchId, 'реконнект вернул в тот же матч');
@@ -220,7 +229,7 @@ async function waitFor(fn, timeoutMs, what) {
     check(h1.init.players.every(p => !p.isBot), 'бота в матче с другом нет');
     const ovRoom2 = await fetchJson('/api/admin/overview', { headers: auth });
     check(ovRoom2.body.openRooms === 0, 'комната закрылась после старта');
-    check(ovRoom2.body.stats.friendMatches === 1, 'friend-матч посчитан в статистике');
+    check(ovRoom2.body.stats.friendMatches >= 1, 'friend-матч посчитан в статистике');
     h1.ws.close(); h2.ws.close();
 
     await fetchJson('/api/admin/balance/reset', { method: 'POST', headers: auth });

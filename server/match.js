@@ -12,19 +12,25 @@ const DISCONNECT_FORFEIT_SEC = 25;
 
 let nextMatchId = 1;
 
+const MAX_PAUSE_MS = 10 * 60 * 1000; // предохранитель от вечной паузы
+
 class MatchRunner {
-  constructor(playersInfo, onFinish) {
-    // playersInfo: [{token, name, ws, isBot}]
+  constructor(playersInfo, onFinish, opts = {}) {
+    // playersInfo: [{token, name, ws, isBot, difficulty}]
     this.id = 'm' + (nextMatchId++);
     this.match = new Match(this.id, balance.get(), playersInfo.map(p => ({ name: p.name, isBot: p.isBot })));
     this.sockets = playersInfo.map(p => p.ws || null);
     this.tokens = playersInfo.map(p => p.token || null);
     this.disconnectedAt = [null, null];
     this.bot = null;
+    this.difficulty = opts.difficulty || 'medium';
+    this.isBotMatch = playersInfo.some(p => p.isBot);
+    this.paused = false;
+    this.pausedAt = 0;
     this.onFinish = onFinish;
     this.finishedNotified = false;
     for (let i = 0; i < playersInfo.length; i++) {
-      if (playersInfo[i].isBot) this.bot = new Bot(this.match, i);
+      if (playersInfo[i].isBot) this.bot = new Bot(this.match, i, this.difficulty);
     }
     const tickMs = 1000 / this.match.balance.match.tickRate;
     this.interval = setInterval(() => this.tickLoop(), tickMs);
@@ -35,7 +41,7 @@ class MatchRunner {
   sendInit(slot) {
     const ws = this.sockets[slot];
     if (!ws) return;
-    this.send(ws, { t: 'matchStart', ...this.match.initData(slot) });
+    this.send(ws, { t: 'matchStart', ...this.match.initData(slot), difficulty: this.difficulty, botMatch: this.isBotMatch });
   }
 
   send(ws, obj) {
@@ -46,6 +52,16 @@ class MatchRunner {
 
   tickLoop() {
     const dt = this.match.dt;
+    // Пауза на обучении (только в матче с ботом): полностью замораживаем симуляцию,
+    // но продолжаем слать снапшот, чтобы клиент показывал застывшее поле.
+    if (this.paused) {
+      if (Date.now() - this.pausedAt > MAX_PAUSE_MS) this.paused = false; // предохранитель
+      const events = this.match.takeEvents();
+      for (let slot = 0; slot < 2; slot++) {
+        this.send(this.sockets[slot], { t: 'snap', s: this.match.snapshotFor(slot, events) });
+      }
+      return;
+    }
     if (this.bot) this.bot.update(dt);
     this.checkDisconnects();
     this.match.step();
@@ -55,6 +71,13 @@ class MatchRunner {
       this.send(this.sockets[slot], { t: 'snap', s: this.match.snapshotFor(slot, events) });
     }
     if (this.match.over) this.finish();
+  }
+
+  setPaused(slot, on) {
+    // Паузу разрешаем только в одиночном матче с ботом (в PvP/с другом — нечестно).
+    if (!this.isBotMatch) return;
+    if (on && !this.paused) { this.paused = true; this.pausedAt = Date.now(); }
+    else if (!on) this.paused = false;
   }
 
   checkDisconnects() {
@@ -80,6 +103,7 @@ class MatchRunner {
       case 'build': res = m.build(slot, String(msg.type || ''), msg.x | 0, msg.y | 0); break;
       case 'sell': res = m.sell(slot, msg.id | 0); break;
       case 'surrender': m.finish(1 - slot, 'surrender'); res = { ok: true }; break;
+      case 'pauseMatch': this.setPaused(slot, !!msg.on); res = { ok: true }; break;
       default: return;
     }
     if (res && !res.ok) this.send(this.sockets[slot], { t: 'reject', reason: res.error });
@@ -138,9 +162,10 @@ const ROOM_TTL_MS = 15 * 60 * 1000;
 // Алфавит без похожих символов (нет 0/O, 1/I/L).
 const ROOM_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 
+const DIFFICULTIES = ['easy', 'medium', 'hard'];
+
 class Lobby {
   constructor() {
-    this.queue = [];          // [{token, name, ws, since, timer}]
     this.rooms = new Map();   // code -> {code, host:{token,name,ws}, createdAt}
     this.matches = new Map(); // id -> MatchRunner
     this.byToken = new Map(); // token -> {runner, slot}
@@ -148,53 +173,19 @@ class Lobby {
     this.stats = { totalMatches: 0, botMatches: 0, pvpMatches: 0, friendMatches: 0 };
   }
 
-  botFallbackMs() {
-    const b = balance.get();
-    return (b.matchmaking && b.matchmaking.botFallbackSec ? b.matchmaking.botFallbackSec : 20) * 1000;
-  }
-
-  enqueue(ws, name, token) {
-    this.dequeue(ws); // на случай повторного клика
-    const entry = { token, name, ws, since: Date.now() };
-    entry.timer = setTimeout(() => this.fallbackToBot(entry), this.botFallbackMs());
-    this.queue.push(entry);
-    this.trySendPair();
-    ws.send(JSON.stringify({ t: 'queued', botFallbackSec: this.botFallbackMs() / 1000 }));
-  }
-
-  dequeue(ws) {
-    const i = this.queue.findIndex(e => e.ws === ws);
-    if (i >= 0) {
-      clearTimeout(this.queue[i].timer);
-      this.queue.splice(i, 1);
-    }
-  }
-
-  trySendPair() {
-    while (this.queue.length >= 2) {
-      const a = this.queue.shift();
-      const b = this.queue.shift();
-      clearTimeout(a.timer); clearTimeout(b.timer);
-      this.startMatch([
-        { token: a.token, name: a.name, ws: a.ws, isBot: false },
-        { token: b.token, name: b.name, ws: b.ws, isBot: false },
-      ], 'pvp');
-    }
-  }
-
-  fallbackToBot(entry) {
-    const i = this.queue.indexOf(entry);
-    if (i < 0) return;
-    this.queue.splice(i, 1);
+  // Мгновенный старт матча против бота выбранной сложности (матчмейкинга больше нет).
+  startBotMatch(ws, name, token, difficulty) {
+    const diff = DIFFICULTIES.includes(difficulty) ? difficulty : 'medium';
+    this.leaveRoomByWs(ws);
     const botName = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)];
     this.startMatch([
-      { token: entry.token, name: entry.name, ws: entry.ws, isBot: false },
+      { token, name, ws, isBot: false, difficulty: diff },
       { token: null, name: botName + ' [бот]', ws: null, isBot: true },
-    ], 'bot');
+    ], 'bot', { difficulty: diff });
   }
 
-  startMatch(players, kind) {
-    const runner = new MatchRunner(players, r => this.onMatchFinish(r));
+  startMatch(players, kind, opts = {}) {
+    const runner = new MatchRunner(players, r => this.onMatchFinish(r), opts);
     runner.match.kind = kind;
     this.matches.set(runner.id, runner);
     for (let slot = 0; slot < players.length; slot++) {
@@ -211,8 +202,7 @@ class Lobby {
   // Хост создаёт комнату и получает код; друг вводит код (или открывает ссылку) — матч стартует.
   // Бот-фоллбек в комнатах не работает: ждём именно друга.
   createRoom(ws, name, token) {
-    this.dequeue(ws);           // нельзя одновременно искать матч и ждать друга
-    this.leaveRoomByWs(ws);     // и держать две комнаты
+    this.leaveRoomByWs(ws);     // нельзя держать две комнаты
     this.cleanupRooms();
     let code;
     do {
@@ -233,7 +223,6 @@ class Lobby {
       return { ok: false, error: 'Создатель комнаты отключился.' };
     }
     this.rooms.delete(room.code);
-    this.dequeue(ws);
     this.startMatch([
       { token: room.host.token, name: room.host.name, ws: room.host.ws, isBot: false },
       { token, name, ws, isBot: false },
@@ -310,7 +299,6 @@ class Lobby {
   }
 
   handleDisconnect(ws) {
-    this.dequeue(ws);
     this.leaveRoomByWs(ws);
     for (const runner of this.matches.values()) runner.detach(ws);
   }

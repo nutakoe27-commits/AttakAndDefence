@@ -14,10 +14,14 @@ const { T, walkable } = require('./mapgen');
 const TOWER_RANGE_EST = 3.6; // оценочный радиус для расчёта покрытия коридора
 
 class Bot {
-  constructor(match, slot) {
+  constructor(match, slot, difficulty = 'medium') {
     this.match = match;
     this.slot = slot;
-    this.cfg = match.balance.bot;
+    // Базовые параметры + оверрайд под выбранную сложность.
+    const base = match.balance.bot || {};
+    const preset = (base.difficulties && base.difficulties[difficulty]) || {};
+    this.cfg = { ...base, ...preset };
+    this.difficulty = difficulty;
     this.actionTimer = 1.0;
     this.plannedRound = 0;
     this.wavesQueued = 0;
@@ -126,11 +130,12 @@ class Bot {
     // Резерв под армию растёт с раундами: ранний бот вкладывается в экономику
     // (шахты окупаются меньше чем за раунд), поздний — фондирует крупные волны.
     const investPhase = Math.min(1, (m.round - 1) / 7);
-    this.reserve = me.gold * (0.18 + investPhase * 0.4);
+    const rb = this.cfg.reserveBase ?? 0.18, rl = this.cfg.reserveLate ?? 0.55;
+    this.reserve = me.gold * (rb + investPhase * (rl - rb));
   }
 
   // Сколько шахт хотим к этому раунду (растёт, но с потолком).
-  desiredMines() { return Math.min(9, 2 + this.match.round); }
+  desiredMines() { return Math.min(this.cfg.mineTarget ?? 9, 2 + this.match.round); }
 
   think() {
     const m = this.match;
@@ -147,7 +152,7 @@ class Bot {
 
     // 2. Нас бьют — усиливаем оборону.
     const pressured = this.intel.hpLostLastBattle > 0 || this.intel.incursion >= this.cfg.defendThreshold;
-    if (pressured && Math.random() < 0.7) {
+    if (pressured && Math.random() < (this.cfg.defendChance ?? 0.7)) {
       this.intel.incursion = Math.max(0, this.intel.incursion - 3);
       if (this.growDefense()) return;
     }
@@ -208,7 +213,7 @@ class Bot {
       }
       return { s, score: s.coverage + cluster * 3 };
     }).sort((a, b) => b.score - a.score);
-    const pick = scored[Math.floor(Math.random() * Math.min(4, scored.length))].s;
+    const pick = scored[Math.floor(Math.random() * Math.min(this.cfg.towerTopN ?? 4, scored.length))].s;
     return m.build(this.slot, type, pick.x, pick.y).ok;
   }
 
@@ -234,7 +239,8 @@ class Bot {
 
     this.wavesQueued++;
     this.reserve = 0;
-    let budget = p.gold * (this.punchNext ? 0.95 : 0.8 + Math.min(0.15, this.wavesQueued * 0.02));
+    const wb = this.cfg.waveBudget ?? 0.8;
+    let budget = p.gold * (this.punchNext ? Math.min(0.98, wb + 0.15) : wb + Math.min(0.12, this.wavesQueued * 0.02));
 
     const late = m.time > 300;
     let comps;

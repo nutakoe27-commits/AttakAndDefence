@@ -176,7 +176,6 @@
       $('#live-indicator').classList.remove('off');
       $('#dash-cards').innerHTML =
         card('Онлайн', r.online) +
-        card('В очереди', r.inQueue) +
         card('Комнат ждёт друга', r.openRooms ?? 0) +
         card('Активных матчей', r.activeMatches) +
         card('Аптайм', fmtDur(r.uptimeSec)) +
@@ -268,7 +267,8 @@
     hardLimitSec: 'Жёсткий лимит, с', tickRate: 'Тикрейт', difficulty: 'Сложность',
     actionIntervalSec: 'Интервал действий, с', ecoWeightEarly: 'Вес экономики (старт)', ecoWeightLate: 'Вес экономики (лейт)',
     defendThreshold: 'Порог обороны, юнитов', aggressionRamp: 'Рост агрессии', mistakeChance: 'Шанс ошибки',
-    botFallbackSec: 'Бот через, с',
+    reserveBase: 'Резерв на армию (старт)', reserveLate: 'Резерв на армию (лейт)', towerTopN: 'Выбор башни из топ-N',
+    waveBudget: 'Бюджет волны, доля', mineTarget: 'Цель по шахтам', defendChance: 'Шанс реакции обороной',
   };
   const HIDDEN_FIELDS = new Set(['name', 'desc', 'hotkey', 'kind', 'attackIntervalSec']);
 
@@ -339,9 +339,17 @@
 
   function renderSettingsEditor() {
     const el = $('#settings-editor');
-    el.innerHTML = `
-      <div class="bal-section"><h3>🤖 Бот</h3>${flatTable('bot', balanceData.bot, defaultData.bot)}</div>
-      <div class="bal-section"><h3>🎯 Матчмейкинг</h3>${flatTable('matchmaking', balanceData.matchmaking, defaultData.matchmaking)}</div>`;
+    let html = `<div class="bal-section"><h3>🤖 Бот — общие</h3>${flatTable('bot', balanceData.bot, defaultData.bot)}</div>`;
+    // Пресеты сложности редактируются отдельными таблицами.
+    const diffs = balanceData.bot && balanceData.bot.difficulties;
+    if (diffs) {
+      const titles = { easy: '🙂 Лёгкий', medium: '😐 Средний', hard: '😈 Сложный' };
+      for (const key of Object.keys(diffs)) {
+        const def = defaultData.bot.difficulties && defaultData.bot.difficulties[key];
+        html += `<div class="bal-section"><h3>${titles[key] || key}</h3>${flatTable('bot.difficulties.' + key, diffs[key], def)}</div>`;
+      }
+    }
+    el.innerHTML = html;
     bindInputs(el);
   }
 

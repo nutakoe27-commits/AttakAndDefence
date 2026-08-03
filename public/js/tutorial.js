@@ -15,7 +15,7 @@ const STEPS = [
 ];
 
 export class Tutorial {
-  constructor() {
+  constructor(onFinish) {
     this.overlay = document.getElementById('tutorial-overlay');
     this.box = document.getElementById('tutorial-box');
     this.stepNum = document.getElementById('tutorial-step-num');
@@ -23,6 +23,7 @@ export class Tutorial {
     this.step = 0;
     this.active = false;
     this.highlighted = null;
+    this.onFinish = onFinish || (() => {});
     document.getElementById('btn-tut-next').addEventListener('click', () => this.next());
     document.getElementById('btn-tut-skip').addEventListener('click', () => this.finish());
   }
@@ -73,11 +74,13 @@ export class Tutorial {
   }
 
   finish() {
+    if (!this.active) return;
     this.active = false;
     this.clearHighlight();
     this.box.style.transform = '';
     this.overlay.classList.add('hidden');
     localStorage.setItem('ad_tutorial_done', '1');
     Ya.save({ tutorial_done: '1' }); // облачное сохранение прогресса
+    this.onFinish(); // снять паузу матча
   }
 }

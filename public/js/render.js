@@ -1,5 +1,6 @@
 // Рендерер мира: террейн (пре-рендер), сущности, эффекты, камера, миникарта.
 import { OWNER_COLORS, drawUnit, drawBuilding, drawBase } from './sprites.js';
+import { audio } from './audio.js';
 
 const T = { GROUND: 0, ROCK: 1, WATER: 2, FOREST: 3 };
 const TILE = 48; // px на тайл в мировых координатах пре-рендера
@@ -177,6 +178,7 @@ export class Renderer {
   }
 
   addEvent(ev) {
+    audio.gameEvent(ev.t); // звук боя (с агрегацией/throttle внутри)
     switch (ev.t) {
       case 'proj':
         this.projectiles.push({ ...ev, born: this.time, dur: ev.k === 'shell' ? .5 : .28 });

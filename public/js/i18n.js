@@ -10,11 +10,13 @@ const DICTS = {
       fullscreen: '⛶ На весь экран', fullscreen_exit: '🡼 Обычный режим',
     },
     conn: { online: '● сервер онлайн', reconnect: '● переподключение…', connecting: 'подключение…' },
-    queue: {
-      title: 'Поиск противника…', sec: 'сек', cancel: 'Отмена',
-      hint1: 'Ищем достойного соперника среди игроков',
-      hint2: 'Живых соперников не видно… готовим достойного бота',
+    diff: {
+      title: 'Выберите сложность', close: 'Отмена',
+      easy: 'Лёгкий', easy_d: 'Бот ошибается и медлит. Для знакомства.',
+      medium: 'Средний', medium_d: 'Развивает экономику и держит оборону.',
+      hard: 'Сложный', hard_d: 'Играет быстро и почти без ошибок.',
     },
+    tutorial_pause: '⏸ Игра на паузе — пройдите обучение',
     hud: {
       units_title: 'Юниты <span class="hint">(выйдут в начале боя)</span>',
       buildings_title: 'Постройки <span class="hint">(на своей половине)</span>',
@@ -131,11 +133,13 @@ const DICTS = {
       fullscreen: '⛶ Fullscreen', fullscreen_exit: '🡼 Exit fullscreen',
     },
     conn: { online: '● server online', reconnect: '● reconnecting…', connecting: 'connecting…' },
-    queue: {
-      title: 'Searching for an opponent…', sec: 'sec', cancel: 'Cancel',
-      hint1: 'Looking for a worthy opponent among players',
-      hint2: 'No live opponents in sight… preparing a worthy bot',
+    diff: {
+      title: 'Choose difficulty', close: 'Cancel',
+      easy: 'Easy', easy_d: 'The bot makes mistakes and is slow. To get started.',
+      medium: 'Medium', medium_d: 'Grows an economy and holds a defense.',
+      hard: 'Hard', hard_d: 'Plays fast and almost flawlessly.',
     },
+    tutorial_pause: '⏸ Game paused — finish the tutorial',
     hud: {
       units_title: 'Units <span class="hint">(deploy when battle starts)</span>',
       buildings_title: 'Buildings <span class="hint">(on your half)</span>',

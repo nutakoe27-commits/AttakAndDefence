@@ -236,6 +236,31 @@ console.log('3в. Прогрессивное усиление юнитов по 
   check(Math.abs((grown.dmgMul || 1) - (1 + bal.match.unitDmgGrowthPerRound * 5)) < 0.01, 'множитель урона растёт по раундам');
 }
 
+console.log('3г. Сложности бота: сильнее реально сильнее (лоб в лоб)');
+{
+  const bal = balance.loadDefault();
+  // hard (slot 0) против easy (slot 1): сильный должен выигрывать большинство.
+  function duel(dA, dB, games) {
+    let aWins = 0, minesA = 0, minesB = 0;
+    for (let g = 0; g < games; g++) {
+      const m = new Match(`duel${g}`, bal, [{ name: 'A', isBot: true }, { name: 'B', isBot: true }], 400 + g);
+      const ba = new Bot(m, 0, dA), bb = new Bot(m, 1, dB);
+      while (!m.over && m.time < bal.match.hardLimitSec + 5) { ba.update(m.dt); bb.update(m.dt); m.step(); }
+      if (m.winner === 0) aWins++;
+      minesA += m.buildings.filter(b => b.owner === 0 && b.type === 'mine').length;
+      minesB += m.buildings.filter(b => b.owner === 1 && b.type === 'mine').length;
+    }
+    return { aWins, minesA: (minesA / games).toFixed(1), minesB: (minesB / games).toFixed(1) };
+  }
+  const he = duel('hard', 'easy', 10);
+  console.log(`    hard vs easy: hard выиграл ${he.aWins}/10 (шахт hard ~${he.minesA}, easy ~${he.minesB})`);
+  check(he.aWins >= 6, 'сложный уверенно обыгрывает лёгкого (≥6/10)');
+  check(+he.minesA > +he.minesB, 'сложный строит больше шахт, чем лёгкий');
+  const hm = duel('hard', 'medium', 10);
+  console.log(`    hard vs medium: hard выиграл ${hm.aWins}/10`);
+  check(hm.aWins >= 5, 'сложный не слабее среднего (лестница сложности) (≥5/10)');
+}
+
 console.log('4. Бот против бота — полный матч (ускоренно)');
 {
   const bal = balance.loadDefault();

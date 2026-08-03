@@ -87,16 +87,12 @@ wss.on('connection', (ws) => {
         ws.send(JSON.stringify({ t: 'hello', token, reattached }));
         break;
       }
-      case 'queue': {
+      case 'playBot': {
         if (!ws.playerToken) return;
         ws.playerName = sanitizeName(msg.name || ws.playerName);
-        lobby.enqueue(ws, ws.playerName, ws.playerToken);
+        lobby.startBotMatch(ws, ws.playerName, ws.playerToken, String(msg.difficulty || 'medium'));
         break;
       }
-      case 'cancelQueue':
-        lobby.dequeue(ws);
-        ws.send(JSON.stringify({ t: 'queueCancelled' }));
-        break;
       case 'createRoom': {
         if (!ws.playerToken) return;
         ws.playerName = sanitizeName(msg.name || ws.playerName);
@@ -116,7 +112,7 @@ wss.on('connection', (ws) => {
         lobby.leaveRoomByWs(ws);
         ws.send(JSON.stringify({ t: 'roomLeft' }));
         break;
-      case 'spawn': case 'unqueue': case 'build': case 'sell': case 'surrender': {
+      case 'spawn': case 'unqueue': case 'build': case 'sell': case 'surrender': case 'pauseMatch': {
         const ref = ws.playerToken ? lobby.byToken.get(ws.playerToken) : null;
         if (ref && ref.runner.sockets[ref.slot] === ws) ref.runner.handleCommand(ref.slot, msg);
         break;

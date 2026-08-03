@@ -5,6 +5,7 @@ import { Renderer, TILE, T } from './render.js';
 import { Tutorial } from './tutorial.js';
 import { OWNER_COLORS, makeIcon } from './sprites.js';
 import { Ya } from './yandex.js';
+import { audio } from './audio.js';
 import { t, detectLang, setLang, lang as getLangRef, unitName, unitDesc, bldName, bldDesc, trError, trPlayerName } from './i18n.js';
 import * as i18n from './i18n.js';
 
@@ -29,7 +30,11 @@ const net = new Net();
 const gs = new GameState();
 const canvas = $('#game-canvas');
 const renderer = new Renderer(canvas);
-const tutorial = new Tutorial();
+// Завершение обучения снимает серверную паузу матча.
+const tutorial = new Tutorial(() => {
+  net.send({ t: 'pauseMatch', on: false });
+  $('#tut-pause-banner').classList.add('hidden');
+});
 let gamePaused = false; // пауза при сворачивании/рекламе (требования Яндекс 1.3, 4.7)
 
 // Инициализация SDK Яндекса (no-op на своём хостинге) и облачных сохранений.
@@ -43,23 +48,42 @@ let gamePaused = false; // пауза при сворачивании/рекла
     if (prefs.tutorial_done) localStorage.setItem('ad_tutorial_done', '1');
     if (prefs.lang) { setLang(String(prefs.lang)); applyStaticI18n(); }
     if (prefs.name && !nameInput.value) nameInput.value = String(prefs.name).slice(0, 20);
+    if (prefs.sound !== undefined) { audio.enabled = String(prefs.sound) !== '0'; updateSoundIcons(); }
   } catch (_) {}
   Ya.loadingReady();   // сообщаем платформе, что игра готова
   Ya.showBanner();     // стики-баннер в меню
-  // Пауза геймплея по сигналам платформы и при сворачивании вкладки.
-  Ya.on('pause', () => { gamePaused = true; });
-  Ya.on('resume', () => { gamePaused = false; });
-  document.addEventListener('visibilitychange', () => { gamePaused = document.hidden; });
+  // Пауза геймплея + глушение звука по сигналам платформы и при сворачивании (Яндекс 1.3, 4.7).
+  const setPause = (p) => { gamePaused = p; audio.setMuted(p); };
+  Ya.on('pause', () => setPause(true));
+  Ya.on('resume', () => setPause(false));
+  document.addEventListener('visibilitychange', () => setPause(document.hidden));
 })();
 
 // Переключатель языка: RU <-> EN, мгновенно перерисовывает интерфейс.
 $('#btn-lang').addEventListener('click', () => {
+  audio.ui();
   setLang(i18n.lang === 'ru' ? 'en' : 'ru');
   Ya.save({ lang: i18n.lang });
   applyStaticI18n();
   if (gs.balance) buildShop(); // перерисовать магазин с новыми именами
   lastQueueJson = ''; // форс-обновление чипов очереди
 });
+
+// ---------- Звук ----------
+function updateSoundIcons() {
+  const icon = audio.enabled ? '🔊' : '🔇';
+  $('#btn-sound').textContent = icon;
+  $('#btn-sound-game').textContent = icon;
+}
+function toggleSound() {
+  const on = audio.toggle();
+  if (on) audio.cue('ui');
+  updateSoundIcons();
+  Ya.save({ sound: on ? '1' : '0' });
+}
+$('#btn-sound').addEventListener('click', toggleSound);
+$('#btn-sound-game').addEventListener('click', toggleSound);
+updateSoundIcons();
 
 // ---------- Экраны ----------
 function showScreen(id) {
@@ -82,15 +106,26 @@ window.addEventListener('orientationchange', () => setTimeout(() => { checkOrien
 const nameInput = $('#player-name');
 nameInput.value = localStorage.getItem('ad_name') || '';
 
+// «Играть» → выбор сложности бота (онлайн-матчмейкинга больше нет).
+const diffModal = $('#diff-modal');
 $('#btn-play').addEventListener('click', () => {
-  const name = nameInput.value.trim() || 'Полководец';
+  audio.ui();
+  const name = nameInput.value.trim() || t('menu.name_ph');
   localStorage.setItem('ad_name', name);
   Ya.save({ name });
   if (!net.connected) { toast(t('toast.no_conn'), 'err'); return; }
-  net.send({ t: 'queue', name });
+  diffModal.classList.remove('hidden');
 });
-$('#btn-howto').addEventListener('click', () => $('#howto-modal').classList.remove('hidden'));
-$('#btn-howto-close').addEventListener('click', () => $('#howto-modal').classList.add('hidden'));
+$('#btn-diff-close').addEventListener('click', () => { audio.ui(); diffModal.classList.add('hidden'); });
+document.querySelectorAll('.diff-opt').forEach(btn => {
+  btn.addEventListener('click', () => {
+    audio.ui();
+    diffModal.classList.add('hidden');
+    net.send({ t: 'playBot', name: myName(), difficulty: btn.dataset.diff });
+  });
+});
+$('#btn-howto').addEventListener('click', () => { audio.ui(); $('#howto-modal').classList.remove('hidden'); });
+$('#btn-howto-close').addEventListener('click', () => { audio.ui(); $('#howto-modal').classList.add('hidden'); });
 nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') $('#btn-play').click(); });
 
 // ---------- Игра с другом (приватные комнаты) ----------
@@ -98,7 +133,7 @@ const friendModal = $('#friend-modal');
 let roomOpen = false; // мы — хост открытой комнаты
 
 function myName() {
-  const name = nameInput.value.trim() || 'Полководец';
+  const name = nameInput.value.trim() || t('menu.name_ph');
   localStorage.setItem('ad_name', name);
   return name;
 }
@@ -258,32 +293,12 @@ net.on('_open', () => {
 });
 net.on('_close', () => { connStatus.textContent = t('conn.reconnect'); connStatus.className = 'conn-status err'; });
 
-let queueTimer = null, queueStart = 0;
-net.on('queued', (msg) => {
-  showScreen('#screen-queue');
-  queueStart = Date.now();
-  const fallback = msg.botFallbackSec || 20;
-  clearInterval(queueTimer);
-  queueTimer = setInterval(() => {
-    const sec = Math.floor((Date.now() - queueStart) / 1000);
-    $('#queue-seconds').textContent = sec;
-    const hint = $('#queue-hint');
-    if (sec >= fallback - 3 && sec < fallback) {
-      hint.textContent = t('queue.hint2');
-      hint.classList.add('warn');
-    } else if (sec < fallback - 3) {
-      hint.textContent = t('queue.hint1');
-      hint.classList.remove('warn');
-    }
-  }, 250);
-});
-net.on('queueCancelled', () => { clearInterval(queueTimer); showScreen('#screen-menu'); });
-$('#btn-cancel-queue').addEventListener('click', () => net.send({ t: 'cancelQueue' }));
-
+let isBotMatch = false;
 net.on('matchStart', (data) => {
-  clearInterval(queueTimer);
   roomOpen = false;
   friendModal.classList.add('hidden');
+  isBotMatch = !!data.botMatch;
+  audio.ensure();
   gs.init(data);
   $('#screen-end').classList.remove('active');
   showScreen('#screen-game');
@@ -295,9 +310,15 @@ net.on('matchStart', (data) => {
   $('#hud-my-name').textContent = data.players[data.yourSlot].name + t('hud.you');
   $('#hud-enemy-name').textContent = trPlayerName(enemyMeta.name);
   endShown = false;
+  lastPhase = null;
   Ya.hideBanner();     // прячем баннер во время боя
   Ya.gameplayStart();  // активный геймплей — для корректной паузы рекламы
-  if (tutorial.shouldShow()) setTimeout(() => tutorial.start(), 600);
+  // Обучение только в матче с ботом; пока оно идёт — просим сервер держать паузу.
+  if (isBotMatch && tutorial.shouldShow()) {
+    net.send({ t: 'pauseMatch', on: true });
+    $('#tut-pause-banner').classList.remove('hidden');
+    setTimeout(() => tutorial.start(), 500);
+  }
 });
 
 let lastPhase = null;
@@ -310,16 +331,18 @@ net.on('snap', (msg) => {
       if (ph === 'battle') {
         stopPlacing();
         toast(t('toast.battle'), 'info');
+        audio.cue('battle');
       } else {
         const me = msg.s.players[gs.mySlot];
         toast(t('toast.round', msg.s.round, me ? me.income : ''), 'info');
+        audio.cue('round');
       }
     }
     lastPhase = ph;
   }
 });
 
-net.on('reject', (msg) => toast(trError(msg.reason), 'err'));
+net.on('reject', (msg) => { toast(trError(msg.reason), 'err'); audio.cue('error'); });
 
 net.on('hello', (msg) => {
   if (msg.reattached) toast(t('toast.reconnected'), 'info');
@@ -362,6 +385,7 @@ function shopButton(kind, key, spec, colors) {
   btn.append(hk, icon, name, cost);
   btn.addEventListener('click', (e) => {
     if (btn.dataset.longpress === '1') { btn.dataset.longpress = ''; e.preventDefault(); return; }
+    audio.ui();
     kind === 'unit' ? orderUnits(key) : startPlacing(key);
   });
   btn.addEventListener('mouseenter', (e) => { if (!isGhostMouse()) showTooltip(btn, kind, key, spec); });
@@ -874,6 +898,7 @@ function maybeShowEnd() {
     const title = $('#end-title');
     title.textContent = draw ? t('end.draw') : meWon ? t('end.win') : t('end.lose');
     title.className = draw ? 'draw' : meWon ? 'win' : 'lose';
+    audio.cue(meWon ? 'win' : draw ? 'round' : 'lose');
     const reasons = {
       base: draw ? t('end.r_base_d') : meWon ? t('end.r_base_w') : t('end.r_base_l'),
       surrender: meWon ? t('end.r_surr_w') : t('end.r_surr_l'),

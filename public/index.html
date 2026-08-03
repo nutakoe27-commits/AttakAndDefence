@@ -14,7 +14,10 @@
 <div id="screen-menu" class="screen active">
   <div class="menu-bg" id="menu-bg-canvas-wrap"><canvas id="menu-bg"></canvas></div>
   <div class="menu-card">
-    <button id="btn-lang" class="btn btn-ghost btn-small lang-btn" title="Язык / Language">🌐 RU</button>
+    <div class="menu-top-btns">
+      <button id="btn-sound" class="btn btn-ghost btn-small icon-btn" title="Звук">🔊</button>
+      <button id="btn-lang" class="btn btn-ghost btn-small lang-btn" title="Язык / Language">🌐 RU</button>
+    </div>
     <div class="logo">
       <div class="logo-swords">⚔</div>
       <h1>ATTACK <span>&amp;</span> DEFENCE</h1>
@@ -35,14 +38,28 @@
   </div>
 </div>
 
-<!-- ЭКРАН: поиск матча -->
-<div id="screen-queue" class="screen">
-  <div class="queue-card">
-    <div class="queue-spinner"></div>
-    <h2 data-i18n="queue.title">Поиск противника…</h2>
-    <div class="queue-time"><span id="queue-seconds">0</span> <span data-i18n="queue.sec">сек</span></div>
-    <div class="queue-hint" id="queue-hint">Ищем достойного соперника среди игроков</div>
-    <button id="btn-cancel-queue" class="btn btn-ghost" data-i18n="queue.cancel">Отмена</button>
+<!-- Модалка выбора сложности бота -->
+<div id="diff-modal" class="modal hidden">
+  <div class="modal-card diff-card">
+    <h2 data-i18n="diff.title">Выберите сложность</h2>
+    <div class="diff-list">
+      <button class="diff-opt" data-diff="easy">
+        <span class="diff-emoji">🙂</span>
+        <span class="diff-name" data-i18n="diff.easy">Лёгкий</span>
+        <span class="diff-desc" data-i18n="diff.easy_d">Бот ошибается и медлит. Для знакомства.</span>
+      </button>
+      <button class="diff-opt" data-diff="medium">
+        <span class="diff-emoji">😐</span>
+        <span class="diff-name" data-i18n="diff.medium">Средний</span>
+        <span class="diff-desc" data-i18n="diff.medium_d">Развивает экономику и держит оборону.</span>
+      </button>
+      <button class="diff-opt" data-diff="hard">
+        <span class="diff-emoji">😈</span>
+        <span class="diff-name" data-i18n="diff.hard">Сложный</span>
+        <span class="diff-desc" data-i18n="diff.hard_d">Играет быстро и почти без ошибок.</span>
+      </button>
+    </div>
+    <button id="btn-diff-close" class="btn btn-ghost" data-i18n="diff.close">Отмена</button>
   </div>
 </div>
 
@@ -83,6 +100,7 @@
       <div class="hud-buttons" id="build-buttons"></div>
     </div>
     <div class="hud-group hud-group-misc">
+      <button id="btn-sound-game" class="btn btn-small icon-btn">🔊</button>
       <button id="btn-fullscreen" class="btn btn-small hidden">⛶</button>
       <button id="btn-surrender" class="btn btn-danger btn-small">🏳</button>
     </div>
@@ -98,6 +116,7 @@
   <div id="toast-wrap"></div>
   <div id="tooltip" class="hidden"></div>
   <div id="placement-hint" class="hidden">ЛКМ — построить · ПКМ / Esc — отмена</div>
+  <div id="tut-pause-banner" class="hidden" data-i18n="tutorial_pause">⏸ Игра на паузе — пройдите обучение</div>
 
   <!-- Мобильное подтверждение стройки: на тачах нет ховера, ставим призрак тапом -->
   <div id="mobile-place-bar" class="hidden">
