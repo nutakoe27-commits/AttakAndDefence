@@ -51,10 +51,12 @@ export const Ya = {
     return new Promise((resolve) => {
       if (!this.sdk) { resolve(false); return; }
       let done = false;
-      const fin = (v) => { if (!done) { done = true; resolve(v); } };
+      const fin = (v) => { if (!done) { done = true; this._emit('resume'); resolve(v); } };
       try {
         this.sdk.adv.showFullscreenAdv({
           callbacks: {
+            // Требование 4.7: на время полноэкранной рекламы игра и звук на паузе.
+            onOpen: () => this._emit('pause'),
             onClose: (wasShown) => fin(!!wasShown),
             onError: () => fin(false),
           },
